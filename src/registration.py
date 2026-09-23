@@ -8,10 +8,31 @@ feature matching.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import cv2
 import numpy as np
+
+from src.config import resolve
+from src.video import probe, read_frame_at
+
+IDENTITY = np.eye(2, 3)
+
+
+@dataclass(frozen=True)
+class Registration:
+    """Result of aligning a video to the reference frame.
+
+    ``warp`` maps reference coordinates to video coordinates (normalised); it is
+    the identity when the alignment was rejected (``ok`` is False, ``reason`` says why).
+    """
+
+    warp: np.ndarray
+    cc: float
+    ok: bool
+    reason: str
 
 
 def edge_map(bgr: np.ndarray, width: int) -> np.ndarray:
@@ -56,3 +77,51 @@ def invert(warp: np.ndarray) -> np.ndarray:
 def transform_points(warp: np.ndarray, points: np.ndarray) -> np.ndarray:
     """Apply a 2x3 affine warp to an ``(N, 2)`` array of points."""
     return points @ warp[:, :2].T + warp[:, 2]
+
+
+@lru_cache(maxsize=None)
+def load_reference(path: str) -> np.ndarray:
+    """The reference frame the scene is drawn on (loaded once)."""
+    image = cv2.imread(str(resolve(path)))
+    if image is None:
+        raise FileNotFoundError(f"reference frame not found: {path}")
+    return image
+
+
+def rejection_reason(warp: np.ndarray, cc: float, params: dict[str, Any]) -> str:
+    """Why an alignment is implausible, or an empty string if it is accepted."""
+    if cc < params["min_cc"]:
+        return f"correlation {cc:.2f} < {params['min_cc']}"
+    shift = float(np.hypot(*(transform_points(warp, np.array([[0.5, 0.5]]))[0] - 0.5)))
+    if shift > params["max_shift"]:
+        return f"centre shift {shift:.3f} > {params['max_shift']}"
+    scale = float(np.sqrt(abs(np.linalg.det(warp[:, :2]))))
+    if abs(scale - 1) > params["max_scale_change"]:
+        return f"scale {scale:.3f} outside 1 +- {params['max_scale_change']}"
+    rotation = float(np.degrees(np.arctan2(warp[1, 0] - warp[0, 1], warp[0, 0] + warp[1, 1])))
+    if abs(rotation) > params["max_rotation_deg"]:
+        return f"rotation {rotation:.1f} deg > {params['max_rotation_deg']}"
+    return ""
+
+
+def register_frame(frame: np.ndarray, params: dict[str, Any]) -> Registration:
+    """Align one BGR frame (any size) to the reference frame, rejecting implausible results."""
+    reference = load_reference(params["reference"])
+    try:
+        warp, cc = estimate_affine(reference, frame, params)
+    except cv2.error as err:
+        return Registration(IDENTITY, 0.0, False, f"ECC failed: {str(err).strip().splitlines()[-1]}")
+    reason = rejection_reason(warp, cc, params)
+    return Registration(IDENTITY if reason else warp, cc, not reason, reason)
+
+
+def register_video(path: str, params: dict[str, Any]) -> Registration:
+    """Align a video to the reference frame using the median of a few frames (moving traffic drops out)."""
+    info = probe(path)
+    width = params["width"]
+    height = round(info.height * width / info.width)
+    frames = [
+        cv2.resize(read_frame_at(path, int(info.n_frames * f)), (width, height), interpolation=cv2.INTER_AREA)
+        for f in params["sample_fractions"]
+    ]
+    return register_frame(np.median(np.stack(frames), axis=0).astype(np.uint8), params)

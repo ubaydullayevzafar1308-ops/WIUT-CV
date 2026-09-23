@@ -12,6 +12,14 @@ examples/            <- ground_truth.json and predictions.json in the exact form
 requirements.txt     <- numpy + opencv for the harness; add your own deps to YOUR repo
 ```
 
+## System requirements
+
+- Python 3.11, `pip install -r requirements.txt` (nothing else; OpenCV is headless, no `libGL`).
+- **Linux + NVIDIA GPU: driver ≥ 525.60.13.** On Linux `requirements.txt` installs the CUDA 12.6
+  build of torch 2.14.0 / torchvision 0.29.0 from `https://download.pytorch.org/whl/cu126`
+  (the default PyPI build is CUDA 13 and needs driver ≥ 580). Check with `nvidia-smi`.
+- macOS installs the regular build (MPS on Apple Silicon, otherwise CPU).
+
 ## Quickstart
 
 ```bash

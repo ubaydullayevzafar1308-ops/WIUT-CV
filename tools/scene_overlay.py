@@ -68,8 +68,10 @@ def render(frame: np.ndarray, scene: Scene, title: str) -> np.ndarray:
         pts = px(lane.polygon.exterior.coords)
         cv2.polylines(img, [pts], True, COLORS["lane"], 1, cv2.LINE_AA)
         c = px(np.asarray(lane.polygon.centroid.coords))[0]
-        tip = (c + lane.direction * 90).astype(int)
-        cv2.arrowedLine(img, tuple(int(v) for v in c), tuple(int(v) for v in tip), COLORS["lane"], 4, cv2.LINE_AA, tipLength=0.35)
+        for direction in lane.directions:
+            tip = (c + direction * 90).astype(int)
+            cv2.arrowedLine(img, tuple(int(v) for v in c), tuple(int(v) for v in tip), COLORS["lane"], 4, cv2.LINE_AA,
+                            tipLength=0.35)
         text(img, f"lane:{lane.id}", (int(c[0]) - 50, int(c[1]) - 14), COLORS["lane"])
     for line_id, line in scene.stop_lines.items():
         cv2.polylines(img, [px(line.coords)], False, COLORS["stop_line"], 4, cv2.LINE_AA)
