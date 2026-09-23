@@ -31,3 +31,8 @@ tracker:
 cache:
   enabled: true
   dir: cache
+
+registration:               # aligning a video to the reference frame the scene was drawn on
+  width: 960                # edge maps are compared at this width
+  iterations: 300
+  eps: 1.0e-6
