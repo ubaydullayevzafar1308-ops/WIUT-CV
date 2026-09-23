@@ -42,3 +42,14 @@ registration:               # aligning a video to the reference frame the scene 
   max_shift: 0.08           # rejected if the frame centre moves more than this (normalised units)
   max_scale_change: 0.10    # rejected if the scale differs from 1 by more than this
   max_rotation_deg: 5.0     # rejected if rotated by more than this
+
+signal:                     # traffic-light phase of avenue_near from the heads visible in the frame
+  sample_fps: 2             # heads are read this often
+  frame_width: 1280         # frames are read at this width (lamp colours are as separable as at 4K)
+  min_lit: 15               # chroma (levels) a lit lamp reaches at least; sun: red ~57 / green ~44, dusk: ~145
+  ped_margin: 0.3           # (red - green) / (|red| + |green|) beyond +-this decides red / green
+  veh_lit_fraction: 0.5     # a vehicle lamp is lit if its chroma is at least this share of the brightest lamp
+  smooth_window_sec: 1.5    # majority vote over this window
+  max_hold_sec: 5.0         # unknown gaps up to this long keep the previous phase (occlusion, flashing green)
+  vehicle_green_after_ped_sec: 3.0   # measured on all samples: after the green man goes red, vehicles keep
+  vehicle_amber_sec: 3.0             # (flashing) green for 3 s, then amber for 3 s, then red
