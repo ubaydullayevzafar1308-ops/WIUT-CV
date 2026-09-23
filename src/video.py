@@ -1,11 +1,16 @@
 """Fast frame reading from 4K H.264 with threaded PyAV and in-decoder downscaling."""
 from __future__ import annotations
 
+import queue
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import TypeVar
 
 import av
 import numpy as np
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -77,3 +82,27 @@ def read_frames(
             next_index = index + stride
             bgr = frame.to_ndarray(width=out_w, height=out_h, format="bgr24", interpolation=interpolation)
             yield index, index / fps, bgr
+
+
+def prefetch(items: Iterator[T], depth: int) -> Iterator[T]:
+    """Run ``items`` in a background thread, keeping up to ``depth`` results ready.
+
+    FFmpeg releases the GIL while decoding, so the next frames are decoded while
+    the caller runs the detector. Exceptions from the producer are re-raised here.
+    """
+    buffer: queue.Queue = queue.Queue(maxsize=depth)
+    done = object()
+
+    def produce() -> None:
+        try:
+            for item in items:
+                buffer.put(item)
+            buffer.put(done)
+        except BaseException as err:  # noqa: BLE001 - handed over to the consumer thread
+            buffer.put(err)
+
+    threading.Thread(target=produce, name="frame-prefetch", daemon=True).start()
+    while (item := buffer.get()) is not done:
+        if isinstance(item, BaseException):
+            raise item
+        yield item

@@ -8,6 +8,7 @@ video:
   decoder_threads: 24       # FFmpeg frame threads; more than cores hides frame-threading latency
   skip_nonref: true         # decoder drops non-reference (B) frames; with this camera's IBBP GOP that is exactly stride 3
   interpolation: AREA       # swscale filter for the downscale
+  prefetch: 16              # frames decoded ahead in a background thread, overlapping decode with detection
 
 detector:
   weights: weights/yolo11s.pt
@@ -16,7 +17,7 @@ detector:
   iou: 0.7
   classes: [0, 1, 2, 3, 5, 7]   # COCO: person, bicycle, car, motorcycle, bus, truck
   batch: 8
-  half: true                # FP16, applied on CUDA only
+  fp16: true                # applied on CUDA only
 
 tracker:
   track_high_thresh: 0.25
