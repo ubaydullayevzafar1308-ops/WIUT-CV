@@ -7,6 +7,7 @@ video:
   stride: 3                 # Part A samples every stride-th frame (29.97 / 3 ≈ 10 fps)
   decoder_threads: 24       # FFmpeg frame threads; more than cores hides frame-threading latency
   skip_nonref: true         # decoder drops non-reference (B) frames; with this camera's IBBP GOP that is exactly stride 3
+  skip_check_frames: 90     # frames checked at start; if the skip is not exactly every stride-th frame, decode all
   interpolation: AREA       # swscale filter for the downscale
   prefetch: 16              # frames decoded ahead in a background thread, overlapping decode with detection
 
