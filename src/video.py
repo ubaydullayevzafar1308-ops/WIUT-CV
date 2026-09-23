@@ -122,6 +122,18 @@ def read_frames(
             yield index, index / fps, bgr
 
 
+def read_frame_at(path: str, index: int) -> np.ndarray:
+    """Full-resolution BGR frame with the given index (seek to the preceding keyframe, decode forward)."""
+    with av.open(path) as container:
+        stream = _open_stream(container, threads=0, skip_nonref=False)
+        fps = float(stream.average_rate)
+        container.seek((stream.start_time or 0) + int(index / fps / stream.time_base), stream=stream, backward=True)
+        for frame in container.decode(stream):
+            if _frame_index(frame, stream) >= index:
+                return frame.to_ndarray(format="bgr24")
+    raise ValueError(f"{path}: frame {index} not found")
+
+
 def prefetch(items: Iterator[T], depth: int) -> Iterator[T]:
     """Run ``items`` in a background thread, keeping up to ``depth`` results ready.
 
