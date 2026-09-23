@@ -20,11 +20,15 @@ SCENE_PATH = ROOT / "configs" / "scene.json"
 
 @dataclass
 class Lane:
-    """A carriageway section with one allowed direction of travel (unit vector in pixel-aspect space)."""
+    """A carriageway section and its allowed directions of travel.
+
+    ``directions`` is a ``(k, 2)`` array of unit vectors in pixel-aspect space;
+    two-way sections list both directions.
+    """
 
     id: str
     polygon: Polygon
-    direction: np.ndarray
+    directions: np.ndarray
 
 
 @dataclass
@@ -55,7 +59,7 @@ class Scene:
         return Scene(
             carriageway=poly(self.carriageway),
             intersection=poly(self.intersection),
-            lanes=[Lane(ln.id, poly(ln.polygon), ln.direction) for ln in self.lanes],
+            lanes=[Lane(ln.id, poly(ln.polygon), ln.directions) for ln in self.lanes],
             crossings={k: poly(v) for k, v in self.crossings.items()},
             islands={k: poly(v) for k, v in self.islands.items()},
             stop_lines={k: line(v) for k, v in self.stop_lines.items()},
@@ -90,8 +94,8 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
 
     lanes = []
     for item in data["lanes"]:
-        direction = np.asarray(item["direction"], dtype=np.float64)
-        lanes.append(Lane(item["id"], Polygon(item["polygon"]), direction / np.linalg.norm(direction)))
+        directions = np.asarray(item["directions"], dtype=np.float64)
+        lanes.append(Lane(item["id"], Polygon(item["polygon"]), directions / np.linalg.norm(directions, axis=1, keepdims=True)))
     return Scene(
         carriageway=Polygon(data["carriageway"]),
         intersection=Polygon(data["intersection"]),

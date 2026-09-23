@@ -15,7 +15,7 @@ def test_scene_loads_with_valid_geometry():
     polygons = [scene.carriageway, scene.intersection, *(ln.polygon for ln in scene.lanes),
                 *scene.crossings.values(), *scene.islands.values()]
     assert all(p.is_valid and p.area > 0 for p in polygons)
-    assert all(np.isclose(np.linalg.norm(ln.direction), 1.0) for ln in scene.lanes)
+    assert all(np.allclose(np.linalg.norm(ln.directions, axis=1), 1.0) for ln in scene.lanes)
     for light in scene.traffic_lights:
         x1, y1, x2, y2 = light["roi"]
         assert 0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1
