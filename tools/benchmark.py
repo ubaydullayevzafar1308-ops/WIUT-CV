@@ -28,7 +28,7 @@ def time_decode(path: str, video_params: dict, **overrides) -> tuple[float, int]
     t0 = time.perf_counter()
     n = sum(1 for _ in read_frames(
         path, stride=vp["stride"], target_width=vp["target_width"], threads=vp["decoder_threads"],
-        skip_nonref=vp["skip_nonref"], interpolation=vp["interpolation"],
+        skip_nonref=vp["skip_nonref"], interpolation=vp["interpolation"], skip_check_frames=vp["skip_check_frames"],
     ))
     return time.perf_counter() - t0, n
 

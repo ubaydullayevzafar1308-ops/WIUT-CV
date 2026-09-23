@@ -143,6 +143,7 @@ def _run_tracking(video_path: str, params: dict[str, Any]) -> Tracks:
         threads=vp["decoder_threads"],
         skip_nonref=vp["skip_nonref"],
         interpolation=vp["interpolation"],
+        skip_check_frames=vp["skip_check_frames"],
     ), vp["prefetch"])
 
     sampled: list[int] = []

@@ -10,6 +10,9 @@ from typing import Any
 import numpy as np
 import yaml
 
+# The evaluation machine has no internet: stop Ultralytics from probing DNS and sending events.
+os.environ.setdefault("YOLO_OFFLINE", "1")
+
 ROOT = Path(__file__).resolve().parent.parent
 PARAMS_PATH = ROOT / "configs" / "params.yaml"
 
