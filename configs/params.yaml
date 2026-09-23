@@ -1,0 +1,31 @@
+# Every tunable number of the pipeline lives here.
+
+seed: 0
+
+video:
+  target_width: 1280        # frames are downscaled to this width in the decoder (height keeps aspect, even)
+  stride: 3                 # Part A samples every stride-th frame (29.97 / 3 ≈ 10 fps)
+  decoder_threads: 24       # FFmpeg frame threads; more than cores hides frame-threading latency
+  skip_nonref: true         # decoder drops non-reference (B) frames; with this camera's IBBP GOP that is exactly stride 3
+  interpolation: AREA       # swscale filter for the downscale
+
+detector:
+  weights: weights/yolo11s.pt
+  imgsz: 1280
+  conf: 0.1                 # low on purpose: ByteTrack uses low-score boxes in its second association
+  iou: 0.7
+  classes: [0, 1, 2, 3, 5, 7]   # COCO: person, bicycle, car, motorcycle, bus, truck
+  batch: 8
+  half: true                # FP16, applied on CUDA only
+
+tracker:
+  track_high_thresh: 0.25
+  track_low_thresh: 0.1
+  new_track_thresh: 0.25
+  track_buffer_sec: 3.0     # how long a lost track is kept, converted to sampled frames
+  match_thresh: 0.8
+  fuse_score: true
+
+cache:
+  enabled: true
+  dir: cache
