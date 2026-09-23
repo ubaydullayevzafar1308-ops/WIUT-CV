@@ -1,2 +1,16 @@
-numpy>=1.24
-opencv-python-headless>=4.8
+# Harness (run_submission.py, evaluate.py)
+numpy==2.4.6
+opencv-python==5.0.0.93
+
+# Decoding
+av==18.1.0
+
+# Detection and tracking
+torch==2.14.0
+torchvision==0.29.0
+ultralytics==8.4.160
+lap==0.5.13
+
+# Scene geometry and configuration
+shapely==2.1.2
+PyYAML==6.0.3
