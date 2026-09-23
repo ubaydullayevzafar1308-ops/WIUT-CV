@@ -1,3 +1,8 @@
+# Linux gets the CUDA 12.6 build of torch/torchvision (NVIDIA driver >= 525.60.13);
+# the default PyPI build for Linux is CUDA 13 and needs driver >= 580.
+# macOS gets the regular build (MPS / CPU).
+--extra-index-url https://download.pytorch.org/whl/cu126
+
 # Harness (run_submission.py, evaluate.py)
 numpy==2.4.6
 opencv-python-headless==5.0.0.93
@@ -6,8 +11,10 @@ opencv-python-headless==5.0.0.93
 av==18.1.0
 
 # Detection and tracking
-torch==2.14.0
-torchvision==0.29.0
+torch==2.14.0+cu126; sys_platform == "linux"
+torch==2.14.0; sys_platform != "linux"
+torchvision==0.29.0+cu126; sys_platform == "linux"
+torchvision==0.29.0; sys_platform != "linux"
 ultralytics-opencv-headless==8.4.160
 lap==0.5.13
 
