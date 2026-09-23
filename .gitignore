@@ -1,0 +1,20 @@
+# Videos: originals and proxies never go to git
+*.mp4
+*.MP4
+samples/proxy/
+
+# Generated
+cache/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
