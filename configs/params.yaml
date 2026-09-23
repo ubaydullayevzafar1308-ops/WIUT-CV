@@ -33,6 +33,12 @@ cache:
   dir: cache
 
 registration:               # aligning a video to the reference frame the scene was drawn on
+  reference: configs/reference_frame.jpg   # C3896 middle frame, 960x540; scene.json is drawn on it
   width: 960                # edge maps are compared at this width
   iterations: 300
   eps: 1.0e-6
+  sample_fractions: [0.25, 0.5, 0.75]      # frames (share of the video) whose median is aligned; removes traffic
+  min_cc: 0.25              # below this ECC correlation the alignment is rejected (real videos: 0.47-0.88, noise: 0.05)
+  max_shift: 0.08           # rejected if the frame centre moves more than this (normalised units)
+  max_scale_change: 0.10    # rejected if the scale differs from 1 by more than this
+  max_rotation_deg: 5.0     # rejected if rotated by more than this

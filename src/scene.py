@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,8 +10,10 @@ import numpy as np
 from shapely import contains_xy
 from shapely.geometry import LineString, Polygon
 
-from src.config import ROOT
-from src.registration import transform_points
+from src.config import ROOT, load_params
+from src.registration import register_video, transform_points
+
+log = logging.getLogger(__name__)
 
 SCENE_PATH = ROOT / "configs" / "scene.json"
 
@@ -99,3 +102,17 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
         solid_lines=named(data["solid_lines"], "line", LineString),
         traffic_lights=data["traffic_lights"],
     )
+
+
+def scene_for_video(video_path: str, params: dict | None = None) -> Scene:
+    """The scene aligned to this video; unshifted zones (with a warning) if the alignment is rejected."""
+    params = params or load_params()
+    scene = load_scene()
+    reg = register_video(video_path, params["registration"])
+    name = Path(video_path).name
+    if not reg.ok:
+        log.warning("%s: scene registration rejected (%s); using zones without shift", name, reg.reason)
+        return scene
+    shift = transform_points(reg.warp, np.array([[0.5, 0.5]]))[0] - 0.5
+    log.info("%s: scene registered (cc=%.2f, centre shift dx=%+.3f dy=%+.3f)", name, reg.cc, shift[0], shift[1])
+    return scene.warped(reg.warp)
