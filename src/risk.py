@@ -72,10 +72,10 @@ def ground_plane(x: np.ndarray | float, y: np.ndarray | float, g: dict[str, Any]
     return np.stack([scale * (np.asarray(x, dtype=np.float64) - 0.5) / depth, scale * g["focal"] / depth], axis=-1)
 
 
-def time_to_contact(pairs: np.ndarray, p: dict[str, Any]) -> float:
-    """Smallest time until a pair comes within contact distance, over pairs approaching fast enough."""
-    if not len(pairs):
-        return np.inf
+def pair_ttc(pairs: np.ndarray, p: dict[str, Any]) -> np.ndarray:
+    """Time until each pair comes within contact distance at constant velocities; inf when it does not
+    within ``horizon_sec``, approaches slower than ``min_closing_speed`` or is already closer than
+    contact + ``min_gap``. Rows as in ``Components.pairs``."""
     rel, vel, pedestrian = pairs[:, :2], pairs[:, 2:4], pairs[:, 4] > 0
     radius = np.where(pedestrian, p["pedestrian_contact_radius"], p["contact_radius"])
     dist = np.hypot(rel[:, 0], rel[:, 1])
@@ -87,8 +87,12 @@ def time_to_contact(pairs: np.ndarray, p: dict[str, Any]) -> float:
     disc = b * b - 4 * a * c
     ok &= (a > 0) & (disc >= 0)
     t = (-b - np.sqrt(np.where(ok, disc, 0.0))) / (2 * np.where(a > 0, a, 1.0))
-    t = t[ok & (t > 0) & (t <= p["horizon_sec"])]
-    return float(t.min()) if len(t) else np.inf
+    return np.where(ok & (t > 0) & (t <= p["horizon_sec"]), t, np.inf)
+
+
+def time_to_contact(pairs: np.ndarray, p: dict[str, Any]) -> float:
+    """Smallest time until a pair comes within contact distance, over pairs approaching fast enough."""
+    return float(pair_ttc(pairs, p).min()) if len(pairs) else np.inf
 
 
 def pedestrian_alert(walkers: np.ndarray, p: dict[str, Any]) -> bool:
