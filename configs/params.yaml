@@ -74,3 +74,71 @@ budget:                     # wall-clock control of Part A so that Part A + Part
   part_a_tail_sec: 3.0      # reserved for rules and post-processing after tracking
   max_sample_stride: 30     # never sample fewer than 1 frame per second
   warmup_batches: 2         # detector batches ignored when measuring speed (model warm-up)
+
+features:                   # per-sample kinematics of tracked objects; speeds in frame widths per second
+  smooth_window_sec: 0.5    # centred moving average of the anchor (bottom centre of the box)
+  velocity_window_sec: 0.6  # central difference span for velocity and acceleration
+  stationary_speed: 0.005   # below this an object counts as standing (~19 px/s in 4K, ~0.3 m/s in the near lanes)
+  heading_min_speed: 0.01   # heading is undefined (NaN) below this speed
+  pedestrian_classes: [0]   # COCO person
+  pedestrian_inset: 0.01    # pedestrians count as on the carriageway only this far inside its edge (frame widths)
+  edge_margin: 0.003        # a box this close to the frame border is cut off by it
+
+postprocess:                # per-frame flags -> segments; per-class values override the default
+  default: {merge_gap: 1.0, min_len: 0.5}
+  classes:
+    stopped_vehicle: {merge_gap: 2.0, min_len: 10.0}
+    congestion: {merge_gap: 5.0, min_len: 20.0}
+    wrong_way: {merge_gap: 1.0, min_len: 1.0}
+    jaywalking: {merge_gap: 1.0, min_len: 1.0}
+    red_light: {merge_gap: 0.5, min_len: 0.5}
+    stop_line: {merge_gap: 2.0, min_len: 2.0}
+    failure_to_yield: {merge_gap: 0.5, min_len: 0.5}
+    solid_line_crossing: {merge_gap: 0.5, min_len: 0.5}
+    illegal_turn: {merge_gap: 1.0, min_len: 1.0}
+    illegal_u_turn: {merge_gap: 1.0, min_len: 1.0}
+    accident: {merge_gap: 2.0, min_len: 1.0}
+    near_miss: {merge_gap: 0.5, min_len: 0.5}
+
+rules:
+  vehicle_classes: [2, 3, 5, 7]   # COCO car, motorcycle, bus, truck
+  stopped_vehicle:
+    min_stop_sec: 10.0            # definition: stationary on the carriageway for 10 s or more
+    run_merge_sec: 2.0            # brief creeping inside a stop does not end it
+    signal_discharge_sec: 15.0    # after green starts, the avenue_near queue takes this long to clear
+    # distances below are in box widths of the standing vehicle, so they follow the perspective
+    queue_gap: 1.5                # another standing vehicle this close ahead = queued behind it
+    queue_lateral: 0.6            # ... and at most this far to the side
+    jam_radius: 2.5               # other standing vehicles within this distance ...
+    jam_neighbours: 2             # ... at least this many = the vehicle is part of a queue or jam
+    overtake_radius: 3.0          # others moving past within this distance ...
+    overtake_speed: 0.02          # ... faster than this (frame widths / s) ...
+    overtake_max_angle: 60.0      # ... in the same direction (degrees) ...
+    min_overtakers: 2             # ... at least this many distinct vehicles: the stop is real, traffic goes round it
+    depart_radius: 3.0            # standing vehicles this close that move off ...
+    depart_window_sec: 3.0        # ... within this many seconds of the vehicle = it was in a queue
+    hidden_signal_radius: 2.5     # in a signal_queue_zone, another standing vehicle this close = queue
+    yield_distance: 0.5           # vehicle anchor this close to a crossing ...
+    yield_reach: 3.0              # ... with a pedestrian on it ahead of the vehicle within this ...
+    yield_lateral: 0.75           # ... and in its lane (this far to the side) = yielding, not stopped
+    max_yield_sec: 10.0           # yielding longer than this in one go counts as standing again
+    arrive_speed: 0.02            # a stop counts only if the vehicle moved faster than this before it
+  wrong_way:
+    min_speed: 0.02               # moving faster than this (frame widths / s)
+    against_angle: 120.0          # heading more than this from every allowed direction of the lane
+    min_duration_sec: 2.0         # for at least this long in one go
+    min_travel: 2.0               # having covered this many of its own box widths (not box jitter)
+    run_merge_sec: 0.5            # gaps shorter than this inside a run are bridged
+    review_min_sec: 1.0           # rejected runs at least this long are clipped for review
+  jaywalking:
+    min_duration_sec: 1.0         # on the carriageway outside crossings for at least this long
+    run_merge_sec: 0.5
+    rider_classes: [1, 2, 3, 5, 7]  # a person whose anchor lies inside one of these boxes is riding, not walking
+    crossing_margin: 0.03         # people this close to a crossing (frame widths) are crossing on it, not jaywalking
+    min_track_travel: 0.03        # a person track that never moves this far (frame widths) is a static false detection
+    review_min_sec: 0.4
+  congestion:
+    min_vehicles: 5               # vehicles in the lane
+    crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
+    smooth_sec: 5.0               # rolling median of the per-frame counts and speeds
+    min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count

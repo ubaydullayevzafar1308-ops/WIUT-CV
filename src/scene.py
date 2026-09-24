@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from shapely import contains_xy
+from shapely import affinity
 from shapely.geometry import LineString, Polygon
 
 from src.config import ROOT, load_params
@@ -45,6 +46,8 @@ class Scene:
     islands: dict[str, Polygon]
     stop_lines: dict[str, LineString]
     solid_lines: dict[str, LineString]
+    stopping_zones: dict[str, Polygon] = field(default_factory=dict)
+    signal_queue_zones: dict[str, Polygon] = field(default_factory=dict)
     traffic_lights: list[dict] = field(default_factory=list)
 
     def warped(self, warp: np.ndarray) -> Scene:
@@ -64,18 +67,35 @@ class Scene:
             islands={k: poly(v) for k, v in self.islands.items()},
             stop_lines={k: line(v) for k, v in self.stop_lines.items()},
             solid_lines={k: line(v) for k, v in self.solid_lines.items()},
+            stopping_zones={k: poly(v) for k, v in self.stopping_zones.items()},
+            signal_queue_zones={k: poly(v) for k, v in self.signal_queue_zones.items()},
             traffic_lights=[
                 {**tl, "roi": transform_points(warp, np.asarray(tl["roi"]).reshape(2, 2)).ravel().tolist()}
                 for tl in self.traffic_lights
             ],
         )
 
-    def on_carriageway(self, xy: np.ndarray) -> np.ndarray:
-        """Boolean mask: which ``(N, 2)`` points lie on the carriageway and not on an island."""
-        inside = contains_xy(self.carriageway, xy[:, 0], xy[:, 1])
+    def on_carriageway(self, xy: np.ndarray, inset: float = 0.0, aspect: float = 1.0) -> np.ndarray:
+        """Boolean mask: which ``(N, 2)`` points lie on the carriageway and not on an island.
+
+        With ``inset`` > 0 a point must be at least that far inside the carriageway
+        edge (in frame widths; ``aspect`` = height / width makes the margin the
+        same in every direction): used for pedestrians, whose anchor sits on the
+        kerb while they wait on the pavement.
+        """
+        area = self.carriageway if inset <= 0 else shrink(self.carriageway, inset, aspect)
+        inside = contains_xy(area, xy[:, 0], xy[:, 1])
         for island in self.islands.values():
             inside &= ~contains_xy(island, xy[:, 0], xy[:, 1])
         return inside
+
+    def in_stopping_zone(self, xy: np.ndarray) -> np.ndarray:
+        """Boolean mask: which ``(N, 2)`` points lie where vehicles routinely stop (bus stop, kerbside parking)."""
+        return _in_any(self.stopping_zones.values(), xy)
+
+    def in_signal_queue_zone(self, xy: np.ndarray) -> np.ndarray:
+        """Boolean mask: which ``(N, 2)`` points lie on an approach held by a signal that is not visible."""
+        return _in_any(self.signal_queue_zones.values(), xy)
 
     def in_crossing(self, xy: np.ndarray) -> np.ndarray:
         """Boolean mask: which ``(N, 2)`` points lie on any pedestrian crossing."""
@@ -83,6 +103,19 @@ class Scene:
         for crossing in self.crossings.values():
             mask |= contains_xy(crossing, xy[:, 0], xy[:, 1])
         return mask
+
+
+def _in_any(polygons, xy: np.ndarray) -> np.ndarray:
+    mask = np.zeros(len(xy), dtype=bool)
+    for polygon in polygons:
+        mask |= contains_xy(polygon, xy[:, 0], xy[:, 1])
+    return mask
+
+
+def shrink(polygon: Polygon, margin: float, aspect: float) -> Polygon:
+    """Polygon shrunk by ``margin`` frame widths, measured with y scaled by ``aspect``."""
+    scaled = affinity.scale(polygon, xfact=1.0, yfact=aspect, origin=(0, 0))
+    return affinity.scale(scaled.buffer(-margin), xfact=1.0, yfact=1.0 / aspect, origin=(0, 0))
 
 
 def load_scene(path: Path = SCENE_PATH) -> Scene:
@@ -104,6 +137,8 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
         islands=named(data["islands"], "polygon", Polygon),
         stop_lines=named(data["stop_lines"], "line", LineString),
         solid_lines=named(data["solid_lines"], "line", LineString),
+        stopping_zones=named(data.get("stopping_zones", []), "polygon", Polygon),
+        signal_queue_zones=named(data.get("signal_queue_zones", []), "polygon", Polygon),
         traffic_lights=data["traffic_lights"],
     )
 
