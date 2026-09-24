@@ -74,3 +74,25 @@ budget:                     # wall-clock control of Part A so that Part A + Part
   part_a_tail_sec: 3.0      # reserved for rules and post-processing after tracking
   max_sample_stride: 30     # never sample fewer than 1 frame per second
   warmup_batches: 2         # detector batches ignored when measuring speed (model warm-up)
+
+features:                   # per-sample kinematics of tracked objects; speeds in frame widths per second
+  smooth_window_sec: 0.5    # centred moving average of the anchor (bottom centre of the box)
+  velocity_window_sec: 0.6  # central difference span for velocity and acceleration
+  stationary_speed: 0.005   # below this an object counts as standing (~19 px/s in 4K, ~0.3 m/s in the near lanes)
+  heading_min_speed: 0.01   # heading is undefined (NaN) below this speed
+
+postprocess:                # per-frame flags -> segments; per-class values override the default
+  default: {merge_gap: 1.0, min_len: 0.5}
+  classes:
+    stopped_vehicle: {merge_gap: 2.0, min_len: 10.0}
+    congestion: {merge_gap: 5.0, min_len: 20.0}
+    wrong_way: {merge_gap: 1.0, min_len: 1.0}
+    jaywalking: {merge_gap: 1.0, min_len: 1.0}
+    red_light: {merge_gap: 0.5, min_len: 0.5}
+    stop_line: {merge_gap: 2.0, min_len: 2.0}
+    failure_to_yield: {merge_gap: 0.5, min_len: 0.5}
+    solid_line_crossing: {merge_gap: 0.5, min_len: 0.5}
+    illegal_turn: {merge_gap: 1.0, min_len: 1.0}
+    illegal_u_turn: {merge_gap: 1.0, min_len: 1.0}
+    accident: {merge_gap: 2.0, min_len: 1.0}
+    near_miss: {merge_gap: 0.5, min_len: 0.5}
