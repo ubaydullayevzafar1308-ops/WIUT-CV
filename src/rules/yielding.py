@@ -37,8 +37,9 @@ def along_is_measurable(ctx: VideoContext, polygon, axis: np.ndarray, min_angle:
 class FailureToYield:
     """A vehicle drives through a crossing while a pedestrian is on it (or stepping onto it) in its path.
 
-    The vehicle's anchor (front) is on the crossing (vehicles in stopping zones,
-    e.g. parking at the corner, are not checked); a reliable pedestrian (see
+    The vehicle drives onto the crossing (its anchor, the bottom centre of the box,
+    is on it at some point; vehicles in stopping zones, e.g. parking at the
+    corner, are not checked); a reliable pedestrian (see
     ``pedestrians.reliable_pedestrians``) walking on the same crossing or within
     ``ped_margin_lanes`` of it, at most ``path_lanes`` lane widths to the side of
     the vehicle's line of travel (its lane or a step beside it) and not more than
@@ -46,10 +47,13 @@ class FailureToYield:
     while the vehicle keeps moving across the crossing (it drives through rather
     than waits, and does not ride along it with the pedestrians, which is only
     measurable where perspective does not make the crossing look parallel to its
-    traffic). The
-    segment runs from entering the crossing to leaving it. On the near crossing,
-    whose signal is read, it only counts while the vehicles do not have green:
-    then the pedestrians cross legally; on green they cross against the signal.
+    traffic). The segment is the whole pass: from the first sample where the
+    vehicle's box touches the crossing to the first where it is fully off it (or
+    the vehicle leaves the frame); passes of one vehicle closer than
+    ``merge_track_gap_sec`` are one event. On the near crossing, whose signal is
+    read, it only counts while the vehicles do not have green: then the
+    pedestrians cross legally; on green they cross against the signal.
+    Crossings in ``excluded_crossings`` (signal not visible) are not checked.
     """
 
     label = "failure_to_yield"
@@ -61,8 +65,10 @@ class FailureToYield:
         """Every vehicle pass over a crossing with a pedestrian on it, with the reason it is kept or rejected."""
         p = ctx.params["rules"]["failure_to_yield"]
         f = ctx.features
-        vehicle = (np.isin(f["cls"], ctx.params["rules"]["vehicle_classes"]) & ~f["edge"]
+        vehicle = (np.isin(f["cls"], ctx.params["rules"]["vehicle_classes"])
                    & ~ctx.scene.in_stopping_zone(np.stack([f["x"], f["y"]], axis=1).astype(np.float64)))
+        vehicle_rows = np.flatnonzero(vehicle)
+        boxes = shapely.box(f["x1"][vehicle_rows], f["y1"][vehicle_rows], f["x2"][vehicle_rows], f["y2"][vehicle_rows])
         pedestrian = reliable_mask(reliable_pedestrians(ctx))
         direction = travel_direction(ctx)
         unit = np.stack([f["vx"], f["vy"]], axis=1).astype(np.float64)
@@ -72,7 +78,11 @@ class FailureToYield:
         xy = np.stack([f["x"], f["y"] * ctx.aspect], axis=1).astype(np.float64)
         found = []
         for name, polygon in ctx.scene.crossings.items():
-            on_crossing = vehicle & contains_xy(polygon, f["x"].astype(np.float64), f["y"].astype(np.float64))
+            if name in p["excluded_crossings"]:
+                continue
+            on_crossing = np.zeros(len(f), dtype=bool)
+            on_crossing[vehicle_rows] = shapely.intersects(polygon, boxes)
+            wheels_on = vehicle & contains_xy(polygon, f["x"].astype(np.float64), f["y"].astype(np.float64))
             peds = self._pedestrians_at(ctx, polygon, pedestrian, p)
             axis = crossing_axis(polygon, ctx.aspect)
             check_along = along_is_measurable(ctx, polygon, axis, p["along_check_min_angle"])
@@ -82,8 +92,10 @@ class FailureToYield:
                 t = f["t"][sl]
                 for start, end in merged_runs(t, on_crossing[sl], ctx.params["rules"]["wrong_way"]["run_merge_sec"]):
                     rows = np.flatnonzero((t >= start) & (t < end) & on_crossing[sl]) + sl.start
+                    if not wheels_on[rows].any():
+                        continue   # only the box overlaps the crossing (tall vehicle passing beside it)
                     present, conflict = 0, 0
-                    for row in rows:
+                    for row in rows[~f["edge"][rows]]:
                         others = peds.get(int(f["frame"][row]))
                         if others is None:
                             continue
@@ -105,7 +117,9 @@ class FailureToYield:
                     known = rows[~np.isnan(direction[rows, 0])]
                     heading = np.median(direction[known], axis=0) if len(known) else np.zeros(2)
                     along = abs(float(heading @ axis)) / max(float(np.hypot(*heading)), 1e-9)
-                    if np.median(f["speed"][rows]) < p["min_speed"]:
+                    if f["edge"][rows].mean() > 0.5:
+                        c["reason"], c["kept"] = "cut off by the frame edge", False
+                    elif np.median(f["speed"][rows]) < p["min_speed"]:
                         c["reason"], c["kept"] = f"waited on crossing {name}{phase}", False
                     elif check_along and along > np.cos(np.radians(p["along_angle"])):
                         c["reason"], c["kept"] = f"rode along crossing {name} (not across it)", False
@@ -120,7 +134,24 @@ class FailureToYield:
                                                   f"({conflict} samples){phase}"), True
                     c["close"] = not c["kept"] and conflict > 0
                     found.append(c)
-        return found
+        return self._one_per_vehicle(found, p["merge_track_gap_sec"])
+
+    @staticmethod
+    def _one_per_vehicle(found: list[dict], gap: float) -> list[dict]:
+        """Join the kept passes of one vehicle that overlap or are closer than ``gap`` seconds."""
+        kept = sorted((c for c in found if c["kept"]), key=lambda c: (c["track_id"], c["start"]))
+        joined: list[dict] = []
+        for c in kept:
+            last = joined[-1] if joined else None
+            if last and last["track_id"] == c["track_id"] and c["start"] - last["end"] < gap:
+                last["end"] = max(last["end"], c["end"])
+                last["conflict_samples"] += c["conflict_samples"]
+                if c["crossing"] not in last["crossing"]:
+                    last["crossing"] += f"+{c['crossing']}"
+                    last["reason"] += f"; then {c['reason']}"
+            else:
+                joined.append(dict(c))
+        return joined + [c for c in found if not c["kept"]]
 
     @staticmethod
     def _pedestrians_at(ctx: VideoContext, polygon, pedestrian: np.ndarray, p: dict) -> dict[int, np.ndarray]:
