@@ -7,8 +7,10 @@ from src.rules.jaywalking import Jaywalking
 from src.rules.signal_rules import RedLight, StopLineViolation
 from src.rules.stopping import Congestion, StoppedVehicle
 from src.rules.wrong_way import WrongWay
+from src.rules.yielding import FailureToYield
 
-RULES: list[Rule] = [StoppedVehicle(), Congestion(), WrongWay(), Jaywalking(), RedLight(), StopLineViolation()]
+RULES: list[Rule] = [StoppedVehicle(), Congestion(), WrongWay(), Jaywalking(), RedLight(), StopLineViolation(),
+                     FailureToYield()]
 
 
 def apply_rules(ctx: VideoContext) -> list[Segment]:

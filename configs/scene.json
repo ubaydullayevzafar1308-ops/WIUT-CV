@@ -112,6 +112,25 @@
    "polygon": [[0.64, 0.505], [0.955, 0.462], [1.0, 0.48], [1.0, 0.76], [0.92, 0.74], [0.85, 0.69], [0.75, 0.6], [0.68, 0.53]]
   }
  ],
+ "structures": [
+  {
+   "id": "gantry_beam",
+   "_note": "signal gantry over avenue_near: its heads get detected as people",
+   "polygon": [[0.095, 0.24], [0.4, 0.23], [0.4, 0.295], [0.095, 0.305]]
+  },
+  {
+   "id": "gantry_poles",
+   "polygon": [[0.095, 0.24], [0.145, 0.24], [0.145, 0.64], [0.095, 0.64]]
+  },
+  {
+   "id": "median_signal_pole",
+   "polygon": [[0.585, 0.31], [0.615, 0.31], [0.615, 0.47], [0.585, 0.47]]
+  },
+  {
+   "id": "crossing_sign_pole",
+   "polygon": [[0.625, 0.32], [0.655, 0.32], [0.655, 0.5], [0.625, 0.5]]
+  }
+ ],
  "traffic_lights": [
   {
    "id": "ped_avenue_near",
