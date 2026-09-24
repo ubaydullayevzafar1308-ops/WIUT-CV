@@ -54,6 +54,12 @@ def stop_line(scene: Scene, aspect: float, approach: str = APPROACH) -> StopLine
                     upstream=float(np.sign(line.distance(centre[:, 0], centre[:, 1], aspect)[0])))
 
 
+def next_green_start(green_starts: np.ndarray, t: float) -> float:
+    """First green start after ``t`` (infinity if the video ends first)."""
+    later = green_starts[green_starts > t]
+    return float(later[0]) if len(later) else float("inf")
+
+
 def phase_changes(ctx: VideoContext, phases: list[str]) -> tuple[np.ndarray, np.ndarray]:
     """Times when the vehicle phase enters one of ``phases`` and when it turns green."""
     phase = ctx.signal.phase
@@ -64,7 +70,11 @@ def phase_changes(ctx: VideoContext, phases: list[str]) -> tuple[np.ndarray, np.
 
 
 class RedLight:
-    """A vehicle crosses the avenue_near stop line while its phase is red, then enters the intersection.
+    """A vehicle crosses the avenue_near stop line while its phase is red and drives on into the intersection.
+
+    It must reach the intersection (or get beyond the near crossing) before the
+    next green without standing still past the line; a vehicle that stops past
+    the line is a stop_line case, never both.
 
     Crossings in the first or last ``phase_grace_sec`` of red are within the
     uncertainty of the phase reading (2 samples/s, smoothed) and are only kept
@@ -101,7 +111,7 @@ class RedLight:
                     continue
                 c = {"track_id": int(f["track_id"][sl.start]), "start": tc, "end": self._leaves(f, sl, i),
                      "phase": phase, "x": float(f["x"][sl][i]), "y": float(f["y"][sl][i])}
-                entered = bool(f["in_intersection"][sl][i:].any())
+                entered, stopped = self._goes_through(ctx, sl, i, dist, next_green_start(green_starts, tc))
                 since_red = tc - red_starts[red_starts <= tc].max() if np.any(red_starts <= tc) else np.inf
                 next_green = green_starts[green_starts > tc]
                 to_green = next_green[0] - tc if len(next_green) else np.inf
@@ -114,13 +124,29 @@ class RedLight:
                     c["reason"], c["kept"] = f"crossed {since_red:.1f} s after red began (phase boundary)", False
                 elif to_green < p["phase_grace_sec"]:
                     c["reason"], c["kept"] = f"crossed {to_green:.1f} s before green (phase boundary)", False
+                elif stopped:
+                    c["reason"], c["kept"] = "crossed on red and stopped past the line (stop_line)", False
                 elif not entered:
-                    c["reason"], c["kept"] = "crossed on red but did not enter the intersection", False
+                    c["reason"], c["kept"] = "crossed on red but did not reach the intersection before green", False
                 else:
                     c["reason"], c["kept"] = f"crossed {since_red:.1f} s into {phase} and drove into the intersection", True
                 c["close"] = not c["kept"]
                 found.append(c)
         return found
+
+    @staticmethod
+    def _goes_through(ctx: VideoContext, sl: slice, i: int, dist: np.ndarray, green: float) -> tuple[bool, bool]:
+        """(entered, stopped): whether after crossing at sample ``i`` the vehicle drove into the intersection
+        (or beyond the near crossing) before ``green``, and whether it stood still past the line on the way."""
+        f = ctx.features
+        rows = np.arange(sl.start + i, sl.stop)
+        rows = rows[f["t"][rows] < green]
+        beyond = f["in_intersection"][rows] | (dist[rows] < -ctx.params["rules"]["stop_line"]["max_past"] * f["size"][rows])
+        until = rows[: int(np.argmax(beyond)) + 1] if beyond.any() else rows
+        standing = f["speed"][until] < ctx.params["features"]["stationary_speed"]
+        t = f["t"][until]
+        stood = float(np.sum(np.r_[np.diff(t), 0.0] * standing)) if len(t) else 0.0
+        return bool(beyond.any()), stood >= ctx.params["rules"]["stop_line"]["min_stop_sec"]
 
     @staticmethod
     def _leaves(f: np.ndarray, sl: slice, i: int) -> float:

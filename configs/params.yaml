@@ -132,12 +132,12 @@ rules:
     run_merge_sec: 0.5            # gaps shorter than this inside a run are bridged
     review_min_sec: 1.0           # rejected runs at least this long are clipped for review
   jaywalking:
-    min_duration_sec: 2.0         # far from crossings and islands on the carriageway for at least this long
-    far_lanes: 1.5                # 'far' = more than this many lane widths from every crossing and island
-    far_min_sec: 1.0              # ... for at least this long within the run
+    min_duration_sec: 2.0         # on the carriageway outside crossings for at least this long
+    crossing_margin_lanes: 0.5    # people within this many lane widths of a crossing are crossing on it
+    corner_cut_sec: 6.0           # a run from one crossing / island to another this short is cutting the corner
+    corner_near_lanes: 1.0        # 'from / to a crossing or island' = run starts / ends within this many lane widths of it
     run_merge_sec: 0.5
     rider_classes: [1, 2, 3, 5, 7]  # a person whose anchor lies inside one of these boxes is riding, not walking
-    crossing_margin: 0.03         # people this close to a crossing (frame widths) are crossing on it, not jaywalking
     min_track_travel: 0.03        # a person track that never moves this far (frame widths) is a static false detection
     review_min_sec: 0.4
   red_light:
@@ -146,7 +146,7 @@ rules:
     review_window_sec: 3.0        # crossings up to this long before red / in amber are clipped as close calls
   stop_line:
     min_stop_sec: 1.0             # standing at least this long ...
-    front_past: 0.15              # ... with the vehicle front this many box widths past the stop line ...
+    front_past: 0.35              # ... with the vehicle front this many box widths past the stop line (line accuracy ~0.3) ...
     max_past: 2.0                 # ... but not further (beyond the near crossing starts the intersection) ...
     red_phases: [red, red_amber]  # ... while the vehicle phase is red
   congestion:
