@@ -17,9 +17,6 @@ from typing import Any
 
 import numpy as np
 
-from src.scene import Scene
-from src.video import read_frames
-
 RED, RED_AMBER, AMBER, GREEN, UNKNOWN = "red", "red_amber", "amber", "green", "unknown"
 PHASES = (RED, RED_AMBER, AMBER, GREEN, UNKNOWN)
 PED_HEAD, VEH_HEAD = "ped_avenue_near", "veh_median"
@@ -28,7 +25,7 @@ LAMP_PERCENTILE = 95        # a lamp's score is a high percentile of its chroma:
 
 @dataclass
 class SignalTimeline:
-    """Signal readings of one video at ``sample_fps``.
+    """Signal readings of one video at ``sample_fps``, taken from the frames the tracker decodes.
 
     ``ped``/``veh`` are the per-sample readings of each head, ``phase`` the
     fused and smoothed phase (one of PHASES).
@@ -150,33 +147,14 @@ def smooth(t: np.ndarray, states: np.ndarray, params: dict[str, Any]) -> np.ndar
     return out
 
 
-def read_timeline(video_path: str, scene: Scene, params: dict[str, Any]) -> SignalTimeline:
-    """Read both heads at ``sample_fps`` and fuse them into a smoothed phase timeline.
+def read_heads(frame: np.ndarray, rois: dict[str, list[float]], params: dict[str, Any]) -> tuple[str, str]:
+    """(pedestrian, vehicle) readings of one BGR frame of any size; ``params`` is the ``signal`` section."""
+    return pedestrian_state(_crop(frame, rois[PED_HEAD]), params), vehicle_state(_crop(frame, rois[VEH_HEAD]), params)
 
-    ``scene`` must already be aligned to this video (``scene_for_video``);
-    ``params`` is the full parameter dict.
-    """
-    sp, vp = params["signal"], params["video"]
-    rois = {light["id"]: light["roi"] for light in scene.traffic_lights}
-    frames = read_frames(
-        video_path,
-        stride=vp["stride"],
-        target_width=sp["frame_width"],
-        threads=vp["decoder_threads"],
-        skip_nonref=vp["skip_nonref"],
-        interpolation=vp["interpolation"],
-        skip_check_frames=vp["skip_check_frames"],
-    )
-    t, ped, veh = [], [], []
-    next_t = 0.0
-    for _, t_sec, bgr in frames:
-        if t_sec < next_t:
-            continue
-        next_t = t_sec + 1.0 / sp["sample_fps"]
-        t.append(t_sec)
-        ped.append(pedestrian_state(_crop(bgr, rois[PED_HEAD]), sp))
-        veh.append(vehicle_state(_crop(bgr, rois[VEH_HEAD]), sp))
-    t_arr, ped_arr, veh_arr = np.array(t), np.array(ped, dtype=object), np.array(veh, dtype=object)
-    fused = np.array([fuse(p, v) for p, v in zip(ped_arr, veh_arr)], dtype=object)
-    phase = vehicle_clearance(t_arr, smooth(t_arr, fused, sp), veh_arr, sp)
-    return SignalTimeline(t=t_arr, ped=ped_arr, veh=veh_arr, phase=phase)
+
+def timeline_from_samples(t: np.ndarray, ped: np.ndarray, veh: np.ndarray, params: dict[str, Any]) -> SignalTimeline:
+    """Fuse and smooth per-sample head readings (collected by the tracking loop) into a phase timeline."""
+    ped, veh = np.asarray(ped, dtype=object), np.asarray(veh, dtype=object)
+    fused = np.array([fuse(p, v) for p, v in zip(ped, veh)], dtype=object)
+    phase = vehicle_clearance(t, smooth(t, fused, params), veh, params)
+    return SignalTimeline(t=np.asarray(t), ped=ped, veh=veh, phase=phase)
