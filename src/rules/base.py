@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from src.postprocess import Segment
+from src.postprocess import Segment, flags_to_runs
 from src.scene import Scene
 from src.signal import GREEN, SignalTimeline
 
@@ -48,3 +48,14 @@ class Rule(Protocol):
     label: str
 
     def apply(self, ctx: VideoContext) -> list[Segment]: ...
+
+
+def merged_runs(t: np.ndarray, flags: np.ndarray, merge_sec: float) -> list[tuple[float, float]]:
+    """Runs of flagged samples of one track, joined across gaps shorter than ``merge_sec``."""
+    runs: list[list[float]] = []
+    for start, end in flags_to_runs(t, flags):
+        if runs and start - runs[-1][1] < merge_sec:
+            runs[-1][1] = end
+        else:
+            runs.append([start, end])
+    return [(s, e) for s, e in runs]

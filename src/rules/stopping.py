@@ -7,9 +7,11 @@ from shapely import affinity, contains_xy
 
 from src.features import track_slices
 from src.postprocess import Segment, flags_to_runs
-from src.rules.base import VideoContext
+from src.rules.base import VideoContext, merged_runs
 
 SIGNAL_LANE = "avenue_near"   # the approach controlled by the visible signal
+# rejected stops that traffic drove round are worth a look: these filters are the least certain
+CLOSE_REASONS = ("cut off by the frame edge", "yielding to pedestrians", "queue or jam")
 
 
 def sample_durations(t: np.ndarray) -> np.ndarray:
@@ -159,7 +161,7 @@ class StoppedVehicle:
             if not standing[sl].any():
                 continue
             dt = sample_durations(t)
-            for start, stop_end in self._stops(t, standing[sl], p["run_merge_sec"]):
+            for start, stop_end in merged_runs(t, standing[sl], p["run_merge_sec"]):
                 inside = (t >= start) & (t < stop_end)
                 if (dt * standing[sl])[inside].sum() < p["min_stop_sec"]:
                     continue
@@ -171,6 +173,8 @@ class StoppedVehicle:
                 candidate["overtakers"] = self._overtakers(ctx, rows, direction, p)
                 candidate["arrived"] = bool(np.any(f["speed"][sl][t < start] > p["arrive_speed"]))
                 candidate["reason"], candidate["kept"] = self._verdict(ctx, rows, candidate, standing, direction, reasons, p)
+                candidate["close"] = (not candidate["kept"] and candidate["reason"] in CLOSE_REASONS
+                                      and candidate["overtakers"] >= p["min_overtakers"])
                 found.append(candidate)
         return found
 
@@ -243,17 +247,6 @@ class StoppedVehicle:
             if np.any(f["speed"][after] > p["overtake_speed"]):
                 return True
         return False
-
-    @staticmethod
-    def _stops(t: np.ndarray, standing: np.ndarray, merge_sec: float) -> list[tuple[float, float]]:
-        """Standing runs of one track, joined across short movements."""
-        stops: list[list[float]] = []
-        for start, end in flags_to_runs(t, standing):
-            if stops and start - stops[-1][1] < merge_sec:
-                stops[-1][1] = end
-            else:
-                stops.append([start, end])
-        return [(s, e) for s, e in stops]
 
 
 class Congestion:

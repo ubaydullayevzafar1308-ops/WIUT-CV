@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from src.postprocess import Segment
 from src.rules.base import Rule, VideoContext
+from src.rules.jaywalking import Jaywalking
 from src.rules.stopping import Congestion, StoppedVehicle
+from src.rules.wrong_way import WrongWay
 
-RULES: list[Rule] = [StoppedVehicle(), Congestion()]
+RULES: list[Rule] = [StoppedVehicle(), Congestion(), WrongWay(), Jaywalking()]
 
 
 def apply_rules(ctx: VideoContext) -> list[Segment]:

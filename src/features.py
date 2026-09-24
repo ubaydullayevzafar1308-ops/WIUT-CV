@@ -27,6 +27,10 @@ FEATURE_DTYPE = np.dtype([
     ("t", np.float64),
     ("track_id", np.int32),
     ("cls", np.int16),
+    ("x1", np.float32),           # raw box, normalised
+    ("y1", np.float32),
+    ("x2", np.float32),
+    ("y2", np.float32),
     ("x", np.float32),            # smoothed anchor, normalised
     ("y", np.float32),
     ("size", np.float32),         # smoothed box width, frame widths: the local scale of the scene (perspective)
@@ -94,6 +98,8 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
     aspect = tracks.info.height / tracks.info.width
     out = np.zeros(len(rows), dtype=FEATURE_DTYPE)
     out["frame"], out["track_id"], out["cls"] = rows["frame"], rows["track_id"], rows["cls"]
+    for key in ("x1", "y1", "x2", "y2"):
+        out[key] = rows[key]
     out["t"] = rows["frame"] / tracks.info.fps
     anchor = np.stack([(rows["x1"] + rows["x2"]) / 2, rows["y2"]], axis=1).astype(np.float64)
     width = (rows["x2"] - rows["x1"]).astype(np.float64)[:, None]

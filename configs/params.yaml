@@ -123,6 +123,20 @@ rules:
     yield_lateral: 0.75           # ... and in its lane (this far to the side) = yielding, not stopped
     max_yield_sec: 10.0           # yielding longer than this in one go counts as standing again
     arrive_speed: 0.02            # a stop counts only if the vehicle moved faster than this before it
+  wrong_way:
+    min_speed: 0.02               # moving faster than this (frame widths / s)
+    against_angle: 120.0          # heading more than this from every allowed direction of the lane
+    min_duration_sec: 2.0         # for at least this long in one go
+    min_travel: 2.0               # having covered this many of its own box widths (not box jitter)
+    run_merge_sec: 0.5            # gaps shorter than this inside a run are bridged
+    review_min_sec: 1.0           # rejected runs at least this long are clipped for review
+  jaywalking:
+    min_duration_sec: 1.0         # on the carriageway outside crossings for at least this long
+    run_merge_sec: 0.5
+    rider_classes: [1, 2, 3, 5, 7]  # a person whose anchor lies inside one of these boxes is riding, not walking
+    crossing_margin: 0.03         # people this close to a crossing (frame widths) are crossing on it, not jaywalking
+    min_track_travel: 0.03        # a person track that never moves this far (frame widths) is a static false detection
+    review_min_sec: 0.4
   congestion:
     min_vehicles: 5               # vehicles in the lane
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
