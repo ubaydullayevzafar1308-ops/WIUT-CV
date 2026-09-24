@@ -20,23 +20,19 @@ from src import pipeline, risk
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
-# Official class ids (14). See the task description for definitions and
-# start/end conventions. Remove entries you never predict; never add.
+# Official class ids we predict (9 of 14; illegal_turn, illegal_u_turn, solid_line_crossing,
+# road_obstacle and fire_smoke are not detected). See the task description for definitions
+# and start/end conventions. Entries may only be removed, never added.
 CLASSES: list[str] = [
     "accident",            # collision between road users / with a fixed object
     "near_miss",           # sharp braking or swerving to avoid a collision, no contact
     "red_light",           # crossing the stop line on red
     "wrong_way",           # driving against the traffic direction / in the oncoming lane
-    "illegal_u_turn",      # U-turn where prohibited
     "stopped_vehicle",     # stationary on the carriageway >= 10 s, not queued at a signal
     "jaywalking",          # pedestrian on the carriageway outside a crossing
     "failure_to_yield",    # driving through a crossing while a pedestrian is on it
-    "illegal_turn",        # turn from the wrong lane or in a prohibited direction
-    "solid_line_crossing", # lane change / manoeuvre across a solid marking
     "stop_line",           # stopped past the stop line on red
     "congestion",          # standstill / crawling traffic across all lanes of a direction
-    "road_obstacle",       # debris, animal or fallen object on the carriageway
-    "fire_smoke",          # visible fire or smoke from a vehicle or on the road
 ]
 
 # Anticipation horizon used by the metric (seconds). step() should return
