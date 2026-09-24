@@ -12,6 +12,76 @@ examples/            <- ground_truth.json and predictions.json in the exact form
 requirements.txt     <- numpy + opencv for the harness; add your own deps to YOUR repo
 ```
 
+## Approach
+
+```
+4K video ─► PyAV decode (every 3rd frame, B-frames skipped in the decoder) ─► YOLO11s @1280 ─► ByteTrack
+        ─► track features (anchor, speed, heading, lane, zones, dwell) + configs/scene.json + signal phase
+        ─► per-class rules (src/rules/) ─► post-processing (merge, drop blips) ─► events
+```
+
+- **Models.** Nothing is trained: YOLO11s with COCO weights (`weights/yolo11s.pt`; `yolo11n.pt` at 640 px on
+  CPU-only machines) and Ultralytics ByteTrack. All events come from rules on the tracks, with thresholds in
+  `configs/params.yaml`, tuned on the four sample videos by reviewing clips.
+- **Scene.** Lanes (with allowed directions), carriageway, crossings, stop line, islands, bus stops,
+  gantry/poles and the traffic-light heads are drawn once on a reference frame (`configs/scene.json`). Each
+  video is aligned to it at runtime (ECC on gradient images; the camera shifts 1–3 % between sessions).
+- **Signal.** The phase of the near approach is read from the pedestrian and vehicle heads by relative chroma
+  (`src/signal.py`); the rules use it for red_light, stop_line, stopped_vehicle and failure_to_yield.
+- **Road plane.** Distances and speeds for collisions use an approximate ground-plane mapping (horizon and
+  scale from the car box width across the image, focal length from vanishing points), in car box widths.
+- **Determinism and budget.** Sampling strides depend only on the device and the video's metadata
+  (cuda / mps: 10 detector frames per second of video = stride 3 at 29.97 fps; cpu: 5 = stride 6), never on
+  timing, so two runs give the same predictions. Timing is only a logged fuse: Part A samples more sparsely
+  only if Part A + Part B are projected over 2.7× the duration, Part B only if it runs slower than 2× real
+  time (the limit is 3×).
+
+| Class | Rule (src/rules/) |
+| --- | --- |
+| stopped_vehicle | stationary ≥ 10 s on the carriageway while traffic goes round it; not queued, not held by the signal, not yielding, not in a bus stop / parking zone |
+| congestion | a lane holds ≥ 5 vehicles with median speed below crawl speed for longer than a signal cycle (90 s) |
+| wrong_way | heading > 120° from every allowed direction of the lane for ≥ 2 s and ≥ 2 box widths of travel |
+| jaywalking | reliable pedestrian on the carriageway outside crossings / islands for ≥ 2 s, walking, not cutting a corner |
+| red_light | crosses the near stop line on red and drives on into the intersection |
+| stop_line | on red, stops with its front past the stop line without entering the intersection |
+| failure_to_yield | drives across a crossing while a pedestrian walks on it in the vehicle's path (near crossing: only when vehicles do not have green) |
+| accident | road-plane footprints touch while closing in, both lose speed sharply, both stop together or drive out of the frame |
+| near_miss | time to contact ≤ 1 s with clearly hard braking or a swerve, reliable tracks, not a queue, no contact, both drive on |
+
+**Part B** (`src/risk.py`) is causal: every 3rd frame at 960 px through the shared YOLO11s and its own
+ByteTrack; time to contact of approaching pairs on the road plane → `sigmoid(3·(1.5 − TTC))` plus bonuses
+(hard braking, wrong way, pedestrian on the road near a vehicle), EMA-smoothed.
+
+## Results
+
+Full run of `run_submission.py` on the four sample videos (Mac M4, MPS, empty cache), events per class in
+`predictions_samples.json` (`evaluate.py --validate-only`: VALID, 22 events). Two consecutive runs gave
+identical files (events and risk curves); Part A sampled every 3rd frame on every video and no time fuse blew.
+
+| Class | C3896 | C3897 | C3902 | C3905 | Total |
+| --- | --- | --- | --- | --- | --- |
+| accident | 0 | 0 | 0 | 0 | 0 |
+| near_miss | 0 | 0 | 0 | 0 | 0 |
+| red_light | 1 | 1 | 0 | 0 | 2 |
+| wrong_way | 0 | 0 | 1 | 0 | 1 |
+| stopped_vehicle | 0 | 1 | 0 | 0 | 1 |
+| jaywalking | 2 | 0 | 1 | 0 | 3 |
+| failure_to_yield | 1 | 3 | 2 | 4 | 10 |
+| stop_line | 2 | 1 | 1 | 1 | 5 |
+| congestion | 0 | 0 | 0 | 0 | 0 |
+| **all** | **6** | **6** | **5** | **5** | **22** |
+
+Time per video, Part A + Part B, against the 3× limit:
+
+| Video | Duration | Part A | A + B | × duration | Share of the 3× budget |
+| --- | --- | --- | --- | --- | --- |
+| C3896 | 340.3 s | 233.1 s | 593.1 s | 1.74× | 58% |
+| C3897 | 317.8 s | 220.2 s | 553.3 s | 1.74× | 58% |
+| C3902 | 317.8 s | 225.0 s | 570.7 s | 1.80× | 60% |
+| C3905 | 127.6 s | 93.4 s | 225.6 s | 1.77× | 59% |
+
+There are no ground-truth labels for the samples, so no scores are given.
+
 ## System requirements
 
 - Python 3.11, `pip install -r requirements.txt` (nothing else; OpenCV is headless, no `libGL`).

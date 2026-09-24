@@ -5,7 +5,7 @@ import logging
 import time
 from pathlib import Path
 
-from src.budget import Plan, plan_budget
+from src.budget import Plan, plan_budget, sampling_stride
 from src.config import runtime_params
 from src.features import compute_features, fit_car_width
 from src.postprocess import merge_segments
@@ -32,7 +32,7 @@ def video_context(video_path: str, params: dict, plan: Plan | None = None) -> Vi
         aspect=info.height / info.width,
         params=params,
         car_width_fit=fit_car_width(features),
-        final_stride=int(tracks.timing.get("final_stride", params["video"]["sample_stride"])),
+        final_stride=int(tracks.timing.get("final_stride", sampling_stride(info, params))),
     )
 
 
