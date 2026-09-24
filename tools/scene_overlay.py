@@ -28,6 +28,7 @@ COLORS = {  # BGR
     "intersection": (0, 200, 255),
     "lane": (255, 160, 0),
     "island": (60, 60, 200),
+    "stopping_zone": (200, 80, 200),
     "crossing": (255, 255, 255),
     "stop_line": (0, 0, 255),
     "solid_line": (0, 255, 255),
@@ -62,6 +63,8 @@ def render(frame: np.ndarray, scene: Scene, title: str) -> np.ndarray:
         fill(img, layer, polygon, COLORS["island"], island_id)
     for crossing_id, polygon in scene.crossings.items():
         fill(img, layer, polygon, COLORS["crossing"], f"crossing:{crossing_id}")
+    for zone_id, polygon in scene.stopping_zones.items():
+        fill(img, layer, polygon, COLORS["stopping_zone"], f"stopping:{zone_id}")
     img = cv2.addWeighted(layer, FILL_ALPHA, img, 1 - FILL_ALPHA, 0)
 
     for lane in scene.lanes:
