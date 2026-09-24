@@ -20,9 +20,9 @@ from shapely import contains_xy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import ROOT, load_params  # noqa: E402
+from src.config import ROOT, runtime_params  # noqa: E402
 from src.scene import Scene, scene_for_video  # noqa: E402
-from src.signal import GREEN, PHASES, RED, SignalTimeline, read_timeline  # noqa: E402
+from src.signal import GREEN, PHASES, RED, SignalTimeline  # noqa: E402
 from src.tracking import Tracks, track_video  # noqa: E402
 
 VIDEO_EXTS = {".mp4", ".MP4"}
@@ -148,7 +148,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--videos", default=str(ROOT / "samples"))
     args = ap.parse_args()
-    params = load_params()
+    params = runtime_params()
     out = ROOT / "outputs"
     out.mkdir(exist_ok=True)
     report = {}
@@ -156,8 +156,8 @@ def main() -> int:
     print("|---|---|---:|---:|---:|---:|")
     for path in sorted(p for p in Path(args.videos).iterdir() if p.suffix in VIDEO_EXTS):
         scene = scene_for_video(str(path), params)
-        timeline = read_timeline(str(path), scene, params)
-        tracks = track_video(str(path), params)
+        tracks = track_video(str(path), params, scene=scene)
+        timeline = tracks.signal_timeline(params)
         crossings = stop_line_crossings(tracks, scene)
         motion_t, moving = approach_motion(tracks, scene)
         stats = phase_stats(timeline, crossings, motion_t, moving)

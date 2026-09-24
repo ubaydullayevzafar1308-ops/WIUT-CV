@@ -1,4 +1,8 @@
-"""YOLO detection + ByteTrack tracking over a video, with an on-disk cache of the tracks table."""
+"""YOLO detection + ByteTrack tracking over a video, with an on-disk cache of the tracks table.
+
+The same decoding pass also reads the traffic-light heads (src/signal.py), so a
+video is decoded once in Part A.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -12,7 +16,10 @@ from typing import Any
 
 import numpy as np
 
-from src.config import load_params, resolve, select_device, set_seeds
+from src.budget import Plan, StrideController
+from src.config import resolve, runtime_params, set_seeds
+from src.scene import Scene, scene_for_video
+from src.signal import PHASES, SignalTimeline, read_heads, timeline_from_samples
 from src.video import VideoInfo, prefetch, probe, read_frames
 
 log = logging.getLogger(__name__)
@@ -28,6 +35,8 @@ TRACK_DTYPE = np.dtype([
     ("x2", np.float32),
     ("y2", np.float32),
 ])
+# One row per signal sample: time and the reading of each head (index into signal.PHASES).
+SIGNAL_DTYPE = np.dtype([("t", np.float64), ("ped", np.int8), ("veh", np.int8)])
 
 _MODELS: dict[str, Any] = {}
 
@@ -37,13 +46,22 @@ class Tracks:
     """Tracker output for one video.
 
     ``frames`` lists every sampled frame index (including frames with no boxes);
-    ``rows`` holds the boxes in ``TRACK_DTYPE``; ``timing`` has stage durations in seconds.
+    ``rows`` holds the boxes in ``TRACK_DTYPE``; ``signal`` the traffic-light
+    samples in ``SIGNAL_DTYPE``; ``timing`` has stage durations in seconds and
+    the final sampling stride.
     """
 
     info: VideoInfo
     frames: np.ndarray
     rows: np.ndarray
+    signal: np.ndarray
     timing: dict[str, float] = field(default_factory=dict)
+
+    def signal_timeline(self, params: dict[str, Any]) -> SignalTimeline:
+        """Phase timeline from the signal samples; ``params`` is the full parameter dict."""
+        names = np.array(PHASES, dtype=object)
+        return timeline_from_samples(self.signal["t"], names[self.signal["ped"]], names[self.signal["veh"]],
+                                     params["signal"])
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +70,7 @@ class Tracks:
             info=np.array([self.info.fps, self.info.n_frames, self.info.width, self.info.height], dtype=np.float64),
             frames=self.frames,
             rows=self.rows,
+            signal=self.signal,
         )
 
     @classmethod
@@ -59,7 +78,7 @@ class Tracks:
         with np.load(path) as data:
             fps, n_frames, width, height = data["info"]
             info = VideoInfo(fps=float(fps), n_frames=int(n_frames), width=int(width), height=int(height))
-            return cls(info=info, frames=data["frames"], rows=data["rows"])
+            return cls(info=info, frames=data["frames"], rows=data["rows"], signal=data["signal"])
 
 
 def get_model(weights: str):
@@ -86,33 +105,48 @@ def make_tracker(tracker_params: dict[str, Any], sampled_fps: float):
     return BYTETracker(args)
 
 
-def params_hash(params: dict[str, Any]) -> str:
-    """Short hash of everything that changes the tracks table."""
-    relevant = {k: params[k] for k in ("video", "detector", "tracker")}
+def light_rois(scene: Scene) -> dict[str, list[float]]:
+    return {light["id"]: light["roi"] for light in scene.traffic_lights}
+
+
+def params_hash(params: dict[str, Any], scene: Scene) -> str:
+    """Short hash of everything that changes the cached output (device profile and head positions included)."""
+    relevant = {k: params[k] for k in ("video", "detector", "tracker", "signal")}
+    relevant["rois"] = {k: np.round(v, 4).tolist() for k, v in light_rois(scene).items()}
     return hashlib.sha1(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:10]
 
 
-def cache_path(video_path: str, params: dict[str, Any]) -> Path:
-    return resolve(params["cache"]["dir"]) / f"{Path(video_path).stem}_{params_hash(params)}.npz"
+def cache_path(video_path: str, params: dict[str, Any], scene: Scene) -> Path:
+    return resolve(params["cache"]["dir"]) / f"{Path(video_path).stem}_{params_hash(params, scene)}.npz"
 
 
-def track_video(video_path: str, params: dict[str, Any] | None = None, use_cache: bool | None = None) -> Tracks:
-    """Detect and track road users in a video, reading or writing the cache.
+def track_video(
+    video_path: str,
+    params: dict[str, Any] | None = None,
+    use_cache: bool | None = None,
+    scene: Scene | None = None,
+    plan: Plan | None = None,
+) -> Tracks:
+    """Detect and track road users and read the traffic light, using the cache when possible.
 
     Args:
         video_path: path to the video file.
-        params: full parameter dict; defaults to ``configs/params.yaml``.
+        params: full parameter dict for this device; defaults to ``runtime_params()``.
         use_cache: overrides ``params["cache"]["enabled"]``.
+        scene: scene aligned to this video; computed if not given.
+        plan: time budget; without it the sampling stride never changes. Results
+            of a run whose stride was raised are not cached.
     """
-    params = params or load_params()
+    params = params or runtime_params()
+    scene = scene or scene_for_video(video_path, params)
     use_cache = params["cache"]["enabled"] if use_cache is None else use_cache
-    path = cache_path(video_path, params)
+    path = cache_path(video_path, params, scene)
     if use_cache and path.exists():
         log.info("tracks cache hit: %s", path.name)
         return Tracks.load(path)
 
-    tracks = _run_tracking(video_path, params)
-    if use_cache:
+    tracks, adapted = _run_tracking(video_path, params, scene, plan)
+    if use_cache and not adapted:
         try:
             tracks.save(path)
         except OSError as err:
@@ -120,13 +154,16 @@ def track_video(video_path: str, params: dict[str, Any] | None = None, use_cache
     return tracks
 
 
-def _run_tracking(video_path: str, params: dict[str, Any]) -> Tracks:
+def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: Plan | None) -> tuple[Tracks, bool]:
     set_seeds(params["seed"])
-    vp, dp = params["video"], params["detector"]
+    vp, dp, sp = params["video"], params["detector"], params["signal"]
     info = probe(video_path)
-    device = select_device()
+    device = params["device"]
     model = get_model(dp["weights"])
-    tracker = make_tracker(params["tracker"], info.fps / vp["stride"])
+    tracker = make_tracker(params["tracker"], info.fps / vp["sample_stride"])
+    controller = StrideController(vp["sample_stride"], plan.part_a_deadline if plan else float("inf"),
+                                  info.n_frames, params["budget"])
+    rois = light_rois(scene)
     predict_kwargs = dict(
         imgsz=dp["imgsz"],
         conf=dp["conf"],
@@ -148,12 +185,21 @@ def _run_tracking(video_path: str, params: dict[str, Any]) -> Tracks:
 
     sampled: list[int] = []
     chunks: list[np.ndarray] = []
+    signal: list[tuple[float, int, int]] = []
     timing = {"decode_wait": 0.0, "detect": 0.0, "track": 0.0}
     t_start = time.perf_counter()
     batch_idx: list[int] = []
     batch_img: list[np.ndarray] = []
+    next_sample, next_signal_t = 0, 0.0
     t0 = time.perf_counter()
-    for index, _, bgr in frames:
+    for index, t_sec, bgr in frames:
+        if t_sec >= next_signal_t:
+            next_signal_t = t_sec + 1.0 / sp["sample_fps"]
+            ped, veh = read_heads(bgr, rois, sp)
+            signal.append((t_sec, PHASES.index(ped), PHASES.index(veh)))
+        if index < next_sample:
+            continue
+        next_sample = index + controller.stride
         batch_idx.append(index)
         batch_img.append(bgr)
         if len(batch_img) < dp["batch"]:
@@ -161,6 +207,7 @@ def _run_tracking(video_path: str, params: dict[str, Any]) -> Tracks:
         timing["decode_wait"] += time.perf_counter() - t0
         chunks += _detect_and_track(model, tracker, batch_idx, batch_img, predict_kwargs, timing)
         sampled += batch_idx
+        controller.update(batch_idx[-1], time.perf_counter())
         batch_idx, batch_img = [], []
         t0 = time.perf_counter()
     timing["decode_wait"] += time.perf_counter() - t0
@@ -168,14 +215,20 @@ def _run_tracking(video_path: str, params: dict[str, Any]) -> Tracks:
         chunks += _detect_and_track(model, tracker, batch_idx, batch_img, predict_kwargs, timing)
         sampled += batch_idx
     timing["total"] = time.perf_counter() - t_start
+    timing["final_stride"] = controller.stride
 
     rows = np.concatenate(chunks) if chunks else np.empty(0, dtype=TRACK_DTYPE)
     log.info(
-        "%s: %d sampled frames, %d boxes, %d tracks on %s in %.1fs (waiting for decoder %.1fs, detect %.1fs, track %.1fs)",
-        Path(video_path).name, len(sampled), len(rows), len(np.unique(rows["track_id"])), device,
+        "%s: %d sampled frames (stride %d%s), %d boxes, %d tracks, %d signal samples on %s in %.1fs "
+        "(waiting for decoder %.1fs, detect %.1fs, track %.1fs)",
+        Path(video_path).name, len(sampled), controller.stride,
+        f", raised from {controller.initial_stride}" if controller.adapted else "",
+        len(rows), len(np.unique(rows["track_id"])), len(signal), device,
         timing["total"], timing["decode_wait"], timing["detect"], timing["track"],
     )
-    return Tracks(info=info, frames=np.asarray(sampled, dtype=np.int32), rows=rows, timing=timing)
+    tracks = Tracks(info=info, frames=np.asarray(sampled, dtype=np.int32), rows=rows,
+                    signal=np.array(signal, dtype=SIGNAL_DTYPE), timing=timing)
+    return tracks, controller.adapted
 
 
 def _detect_and_track(

@@ -6,8 +6,9 @@ import pytest
 
 from src.config import ROOT, load_params
 from src.scene import scene_for_video
-from src.signal import (AMBER, GREEN, RED, RED_AMBER, UNKNOWN, fuse, pedestrian_state, read_timeline, smooth,
-                        vehicle_clearance, vehicle_state)
+from src.signal import (AMBER, GREEN, RED, RED_AMBER, UNKNOWN, fuse, pedestrian_state, read_heads, smooth,
+                        timeline_from_samples, vehicle_clearance, vehicle_state)
+from src.video import read_frames
 
 PARAMS = load_params()
 SP = PARAMS["signal"]
@@ -89,7 +90,16 @@ def test_timeline_on_dusk_sample():
     path = ROOT / "samples" / "C3905.MP4"
     if not path.exists():
         pytest.skip("C3905.MP4 not available (videos are not in git)")
-    timeline = read_timeline(str(path), scene_for_video(str(path), PARAMS), PARAMS)
+    rois = {light["id"]: light["roi"] for light in scene_for_video(str(path), PARAMS).traffic_lights}
+    vp, next_t, samples = PARAMS["video"], 0.0, []
+    # sampled like the tracking loop: decoded frames at the tracking width, sample_fps readings
+    for _, t_sec, bgr in read_frames(str(path), vp["stride"], vp["target_width"], vp["decoder_threads"],
+                                     vp["skip_nonref"], vp["interpolation"], vp["skip_check_frames"]):
+        if t_sec >= next_t:
+            next_t = t_sec + 1.0 / SP["sample_fps"]
+            samples.append((t_sec, *read_heads(bgr, rois, SP)))
+    t, ped, veh = zip(*samples)
+    timeline = timeline_from_samples(np.array(t), np.array(ped), np.array(veh), SP)
     assert np.mean(timeline.phase == UNKNOWN) < 0.02
     # phases read off the video by eye: red, green from ~34 s, amber ~72-75 s, red, green from ~115 s
     for t_sec, expected in [(15, RED), (50, GREEN), (73.5, AMBER), (95, RED), (122, GREEN)]:

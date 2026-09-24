@@ -4,7 +4,8 @@ seed: 0
 
 video:
   target_width: 1280        # frames are downscaled to this width in the decoder (height keeps aspect, even)
-  stride: 3                 # Part A samples every stride-th frame (29.97 / 3 ≈ 10 fps)
+  stride: 3                 # decode stride: every 3rd frame (29.97 / 3 ≈ 10 fps); the non-reference skip gives exactly this
+  sample_stride: 3          # frames given to the detector: every sample_stride-th (multiple of stride; raised by the budget)
   decoder_threads: 24       # FFmpeg frame threads; more than cores hides frame-threading latency
   skip_nonref: true         # decoder drops non-reference (B) frames; with this camera's IBBP GOP that is exactly stride 3
   skip_check_frames: 90     # frames checked at start; if the skip is not exactly every stride-th frame, decode all
@@ -45,7 +46,6 @@ registration:               # aligning a video to the reference frame the scene 
 
 signal:                     # traffic-light phase of avenue_near from the heads visible in the frame
   sample_fps: 2             # heads are read this often
-  frame_width: 1280         # frames are read at this width (lamp colours are as separable as at 4K)
   min_lit: 15               # chroma (levels) a lit lamp reaches at least; sun: red ~57 / green ~44, dusk: ~145
   ped_margin: 0.3           # (red - green) / (|red| + |green|) beyond +-this decides red / green
   veh_lit_fraction: 0.5     # a vehicle lamp is lit if its chroma is at least this share of the brightest lamp
@@ -53,3 +53,24 @@ signal:                     # traffic-light phase of avenue_near from the heads 
   max_hold_sec: 5.0         # unknown gaps up to this long keep the previous phase (occlusion, flashing green)
   vehicle_green_after_ped_sec: 3.0   # measured on all samples: after the green man goes red, vehicles keep
   vehicle_amber_sec: 3.0             # (flashing) green for 3 s, then amber for 3 s, then red
+
+device_profiles:            # overrides applied on top of the settings above, by device kind
+  cpu:                      # no GPU: small model, small input, fewer frames
+    detector:
+      weights: weights/yolo11n.pt
+      imgsz: 640
+      batch: 4
+    video:
+      sample_stride: 6
+
+budget:                     # wall-clock control of Part A so that Part A + Part B fit the harness limit
+  time_factor: 3.0          # harness limit: Part A + Part B <= 3 x video duration
+  target_factor: 1.5        # what Part A + Part B should take
+  hard_margin: 0.85         # share of the harness limit used when the target is out of reach
+  part_b_probe_frames: 30   # 4K frames read with OpenCV (as the harness does) to estimate Part B
+  part_b_warmup_frames: 5
+  part_b_safety: 1.25       # multiplier on the estimated Part B decode time
+  part_b_model_factor: 0.0  # extra Part B seconds per video second for the risk model (0 while it is a stub)
+  part_a_tail_sec: 3.0      # reserved for rules and post-processing after tracking
+  max_sample_stride: 30     # never sample fewer than 1 frame per second
+  warmup_batches: 2         # detector batches ignored when measuring speed (model warm-up)

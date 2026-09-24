@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import ROOT, load_params, select_device  # noqa: E402
+from src.config import ROOT, runtime_params, select_device  # noqa: E402
 from src.tracking import track_video  # noqa: E402
 from src.video import probe, read_frames  # noqa: E402
 
@@ -53,7 +53,7 @@ def main() -> int:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    params = load_params()
+    params = runtime_params()
     info = probe(args.video)
     budget = TIME_FACTOR * info.duration
     rows: list[tuple[str, float, int]] = []
