@@ -30,6 +30,7 @@ FEATURE_DTYPE = np.dtype([
     ("x", np.float32),            # smoothed anchor, normalised
     ("y", np.float32),
     ("size", np.float32),         # smoothed box width, frame widths: the local scale of the scene (perspective)
+    ("edge", np.bool_),           # the box touches the frame border (object cut off)
     ("vx", np.float32),           # frame widths / s
     ("vy", np.float32),
     ("speed", np.float32),
@@ -96,6 +97,9 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
     out["t"] = rows["frame"] / tracks.info.fps
     anchor = np.stack([(rows["x1"] + rows["x2"]) / 2, rows["y2"]], axis=1).astype(np.float64)
     width = (rows["x2"] - rows["x1"]).astype(np.float64)[:, None]
+    margin = fp["edge_margin"]
+    out["edge"] = ((rows["x1"] < margin) | (rows["y1"] < margin) | (rows["x2"] > 1 - margin)
+                   | (rows["y2"] > 1 - margin))
 
     for sl in track_slices(rows["track_id"]):
         t = out["t"][sl]

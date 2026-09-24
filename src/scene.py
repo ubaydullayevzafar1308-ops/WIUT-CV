@@ -47,6 +47,7 @@ class Scene:
     stop_lines: dict[str, LineString]
     solid_lines: dict[str, LineString]
     stopping_zones: dict[str, Polygon] = field(default_factory=dict)
+    signal_queue_zones: dict[str, Polygon] = field(default_factory=dict)
     traffic_lights: list[dict] = field(default_factory=list)
 
     def warped(self, warp: np.ndarray) -> Scene:
@@ -67,6 +68,7 @@ class Scene:
             stop_lines={k: line(v) for k, v in self.stop_lines.items()},
             solid_lines={k: line(v) for k, v in self.solid_lines.items()},
             stopping_zones={k: poly(v) for k, v in self.stopping_zones.items()},
+            signal_queue_zones={k: poly(v) for k, v in self.signal_queue_zones.items()},
             traffic_lights=[
                 {**tl, "roi": transform_points(warp, np.asarray(tl["roi"]).reshape(2, 2)).ravel().tolist()}
                 for tl in self.traffic_lights
@@ -89,10 +91,11 @@ class Scene:
 
     def in_stopping_zone(self, xy: np.ndarray) -> np.ndarray:
         """Boolean mask: which ``(N, 2)`` points lie where vehicles routinely stop (bus stop, kerbside parking)."""
-        mask = np.zeros(len(xy), dtype=bool)
-        for zone in self.stopping_zones.values():
-            mask |= contains_xy(zone, xy[:, 0], xy[:, 1])
-        return mask
+        return _in_any(self.stopping_zones.values(), xy)
+
+    def in_signal_queue_zone(self, xy: np.ndarray) -> np.ndarray:
+        """Boolean mask: which ``(N, 2)`` points lie on an approach held by a signal that is not visible."""
+        return _in_any(self.signal_queue_zones.values(), xy)
 
     def in_crossing(self, xy: np.ndarray) -> np.ndarray:
         """Boolean mask: which ``(N, 2)`` points lie on any pedestrian crossing."""
@@ -100,6 +103,13 @@ class Scene:
         for crossing in self.crossings.values():
             mask |= contains_xy(crossing, xy[:, 0], xy[:, 1])
         return mask
+
+
+def _in_any(polygons, xy: np.ndarray) -> np.ndarray:
+    mask = np.zeros(len(xy), dtype=bool)
+    for polygon in polygons:
+        mask |= contains_xy(polygon, xy[:, 0], xy[:, 1])
+    return mask
 
 
 def shrink(polygon: Polygon, margin: float, aspect: float) -> Polygon:
@@ -128,6 +138,7 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
         stop_lines=named(data["stop_lines"], "line", LineString),
         solid_lines=named(data["solid_lines"], "line", LineString),
         stopping_zones=named(data.get("stopping_zones", []), "polygon", Polygon),
+        signal_queue_zones=named(data.get("signal_queue_zones", []), "polygon", Polygon),
         traffic_lights=data["traffic_lights"],
     )
 

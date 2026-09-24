@@ -105,6 +105,13 @@
    "polygon": [[0.91, 0.39], [1.0, 0.38], [1.0, 0.465], [0.91, 0.465]]
   }
  ],
+ "signal_queue_zones": [
+  {
+   "id": "far_approach",
+   "_note": "approach from the right edge to the far crossing: its signal is not visible, so vehicles standing here with others near them are queued at it",
+   "polygon": [[0.64, 0.505], [0.955, 0.462], [1.0, 0.48], [1.0, 0.76], [0.92, 0.74], [0.85, 0.69], [0.75, 0.6], [0.68, 0.53]]
+  }
+ ],
  "traffic_lights": [
   {
    "id": "ped_avenue_near",
