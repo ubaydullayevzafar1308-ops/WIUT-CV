@@ -19,6 +19,7 @@ replayed from a log. The score is EMA-smoothed and clipped to [0, 1].
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ from src.config import runtime_params, set_seeds
 from src.registration import register_frame
 from src.scene import Scene, load_scene
 from src.tracking import get_model, make_tracker
+
+log = logging.getLogger(__name__)
 
 PERSON = 0
 NO_PAIRS = np.zeros((0, 5))
@@ -138,7 +141,7 @@ class RiskEstimator:
         self.meta = meta
         self.aspect = meta["height"] / meta["width"]
         self.model = get_model(self.params["detector"]["weights"])
-        self.stride = self.p["stride"]
+        self.stride = max(1, round(meta["fps"] / self.p["sample_fps"]))   # device profile + fps: deterministic
         self.tracker = make_tracker(self.params["tracker"], meta["fps"] / self.stride)
         self.scene: Scene = load_scene()
         self.aligned = False
@@ -173,18 +176,25 @@ class RiskEstimator:
     # --- timing and scene -------------------------------------------------
 
     def _pace(self, t_sec: float) -> None:
-        """Process fewer frames when Part B runs slower than ``realtime_factor`` (the stride only grows).
+        """Time fuse: process fewer frames when Part B runs slower than ``realtime_fuse`` (the stride only grows).
 
         The pace is measured from the end of the warm-up (model loading, first
-        inferences), as seconds spent per second of video since then.
+        inferences, the one-off scene alignment), as seconds spent per second of
+        video since then, and judged only over at least ``pace_min_sec`` of video,
+        so one-off hiccups do not count. On a normal machine it never blows, so the
+        scores do not depend on timing.
         """
         self.processed += 1
-        if self.processed <= self.p["pace_warmup_steps"]:
+        if self.processed <= self.p["pace_warmup_steps"] or not self.aligned:
             self.pace_origin = (time.perf_counter(), t_sec)
             return
         started, t0 = self.pace_origin
-        if time.perf_counter() - started > self.p["realtime_factor"] * (t_sec - t0) and self.stride < self.p["max_stride"]:
+        if t_sec - t0 < self.p["pace_min_sec"]:
+            return
+        if time.perf_counter() - started > self.p["realtime_fuse"] * (t_sec - t0) and self.stride < self.p["max_stride"]:
             self.stride += 1
+            log.warning("Part B time fuse blown at %.1f s (slower than %.1fx real time): stride -> %d",
+                        t_sec, self.p["realtime_fuse"], self.stride)
             self.pace_origin = (time.perf_counter(), t_sec)
 
     def _align(self, small: np.ndarray, t_sec: float) -> None:
@@ -203,6 +213,7 @@ class RiskEstimator:
                 self.scene = load_scene().warped(reg.warp)
         self.registration_frames = []
         self.aligned = True
+        self.pace_origin = (time.perf_counter(), t_sec)   # the alignment is a one-off cost, not the pace
 
     # --- measurement ------------------------------------------------------
 

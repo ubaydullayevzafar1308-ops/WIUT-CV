@@ -5,7 +5,8 @@ seed: 0
 video:
   target_width: 1280        # frames are downscaled to this width in the decoder (height keeps aspect, even)
   stride: 3                 # decode stride: every 3rd frame (29.97 / 3 ≈ 10 fps); the non-reference skip gives exactly this
-  sample_stride: 3          # frames given to the detector: every sample_stride-th (multiple of stride; raised by the budget)
+  sample_fps: 10            # detector frames per second of video: sets the sampling stride (budget.sampling_stride)
+  reference_pixels: 8294400 # 3840 x 2160; larger frames get a proportionally larger stride
   decoder_threads: 24       # FFmpeg frame threads; more than cores hides frame-threading latency
   skip_nonref: true         # decoder drops non-reference (B) frames; with this camera's IBBP GOP that is exactly stride 3
   skip_check_frames: 90     # frames checked at start; if the skip is not exactly every stride-th frame, decode all
@@ -61,17 +62,18 @@ device_profiles:            # overrides applied on top of the settings above, by
       imgsz: 640
       batch: 4
     video:
-      sample_stride: 6
+      sample_fps: 5
+    risk:
+      sample_fps: 5
 
-budget:                     # wall-clock control of Part A so that Part A + Part B fit the harness limit
+budget:                     # time-limit fuse of Part A (the stride itself is chosen without timing)
   time_factor: 3.0          # harness limit: Part A + Part B <= 3 x video duration
-  target_factor: 2.0        # Part A + Part B plan; Part A raises its stride only if A+B would exceed this
-  hard_margin: 0.85         # share of the harness limit used when the target is out of reach
+  fuse_factor: 2.7          # Part A raises its stride only if Part A + Part B are projected over this (logged)
   part_b_probe_frames: 30   # 4K frames read with OpenCV (as the harness does) to estimate Part B
   part_b_warmup_frames: 5
   part_b_safety: 1.25       # multiplier on the estimated Part B decode time
-  part_b_model_factor: 0.5  # extra Part B seconds per video second for the risk model (Part B paces itself to
-                            # risk.realtime_factor = 1.0x including the ~0.5x of 4K decoding; measured 0.77-0.95x)
+  part_b_model_factor: 0.5  # extra Part B seconds per video second for the risk model (measured 0.77-0.99x
+                            # including the ~0.5x of 4K decoding)
   part_a_tail_sec: 3.0      # reserved for rules and post-processing after tracking
   max_sample_stride: 30     # never sample fewer than 1 frame per second
   warmup_batches: 2         # detector batches ignored when measuring speed (model warm-up)
@@ -215,12 +217,15 @@ risk:                       # Part B, src/risk.py; distances and speeds on the g
     horizon_y: -0.07        # row where the car box width model reaches zero (features.fit_car_width: 0.14 * y + 0.01)
     width_slope: 0.141      # car box width (frame widths) per unit of y
     focal: 1.6              # frame widths; from the vanishing points of the avenue (tracks) and of its crossings
-  stride: 3                 # detect + track every stride-th frame; other frames return the last score
+  sample_fps: 10            # detect + track this many frames per second of video (stride = fps / this);
+                            # other frames return the last score
   max_stride: 12
   frame_width: 960          # 4K frames are resized to this width (a 4x reduction: OpenCV fast path)
   imgsz: 960                # detector input size
-  realtime_factor: 1.0      # Part B may spend this many seconds per video second (harness decoding included)
+  realtime_fuse: 2.0        # time fuse: the stride grows only if Part B runs slower than this x real time
+                            # (harness decoding included; logged)
   pace_warmup_steps: 10     # processed frames ignored when measuring the pace (model warm-up)
+  pace_min_sec: 10.0        # the fuse judges the pace over at least this much video (one-off hiccups do not count)
   registration_sec: 2.0     # the scene is aligned on the median of the frames seen in the first seconds
   registration_frames: 10
   history_sec: 1.5          # track history kept per object

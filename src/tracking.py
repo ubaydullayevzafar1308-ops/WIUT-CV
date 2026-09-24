@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from src.budget import Plan, StrideController
+from src.budget import Plan, StrideController, sampling_stride
 from src.config import resolve, runtime_params, set_seeds
 from src.scene import Scene, scene_for_video
 from src.signal import PHASES, SignalTimeline, read_heads, timeline_from_samples
@@ -134,7 +134,7 @@ def track_video(
         params: full parameter dict for this device; defaults to ``runtime_params()``.
         use_cache: overrides ``params["cache"]["enabled"]``.
         scene: scene aligned to this video; computed if not given.
-        plan: time budget; without it the sampling stride never changes. Results
+        plan: the time fuse; without it the sampling stride never changes. Results
             of a run whose stride was raised are not cached.
     """
     params = params or runtime_params()
@@ -160,8 +160,9 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
     info = probe(video_path)
     device = params["device"]
     model = get_model(dp["weights"])
-    tracker = make_tracker(params["tracker"], info.fps / vp["sample_stride"])
-    controller = StrideController(vp["sample_stride"], plan.part_a_deadline if plan else float("inf"),
+    stride = sampling_stride(info, params)
+    tracker = make_tracker(params["tracker"], info.fps / stride)
+    controller = StrideController(stride, plan.part_a_deadline if plan else float("inf"),
                                   info.n_frames, params["budget"])
     rois = light_rois(scene)
     predict_kwargs = dict(

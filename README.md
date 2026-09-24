@@ -30,8 +30,11 @@ requirements.txt     <- numpy + opencv for the harness; add your own deps to YOU
   (`src/signal.py`); the rules use it for red_light, stop_line, stopped_vehicle and failure_to_yield.
 - **Road plane.** Distances and speeds for collisions use an approximate ground-plane mapping (horizon and
   scale from the car box width across the image, focal length from vanishing points), in car box widths.
-- **Budget.** Part A plans its time from a measured estimate of Part B and raises its sampling stride only
-  if Part A + Part B would exceed 2× the video duration (the limit is 3×).
+- **Determinism and budget.** Sampling strides depend only on the device and the video's metadata
+  (cuda / mps: 10 detector frames per second of video = stride 3 at 29.97 fps; cpu: 5 = stride 6), never on
+  timing, so two runs give the same predictions. Timing is only a logged fuse: Part A samples more sparsely
+  only if Part A + Part B are projected over 2.7× the duration, Part B only if it runs slower than 2× real
+  time (the limit is 3×).
 
 | Class | Rule (src/rules/) |
 | --- | --- |
@@ -47,39 +50,37 @@ requirements.txt     <- numpy + opencv for the harness; add your own deps to YOU
 
 **Part B** (`src/risk.py`) is causal: every 3rd frame at 960 px through the shared YOLO11s and its own
 ByteTrack; time to contact of approaching pairs on the road plane → `sigmoid(3·(1.5 − TTC))` plus bonuses
-(hard braking, wrong way, pedestrian on the road near a vehicle), EMA-smoothed; the stride grows when it
-falls behind real time.
+(hard braking, wrong way, pedestrian on the road near a vehicle), EMA-smoothed.
 
 ## Results
 
 Full run of `run_submission.py` on the four sample videos (Mac M4, MPS, empty cache), events per class in
-`predictions_samples.json` (`evaluate.py --validate-only`: VALID, 21 events):
+`predictions_samples.json` (`evaluate.py --validate-only`: VALID, 22 events). Two consecutive runs gave
+identical files (events and risk curves); Part A sampled every 3rd frame on every video and no time fuse blew.
 
 | Class | C3896 | C3897 | C3902 | C3905 | Total |
 | --- | --- | --- | --- | --- | --- |
 | accident | 0 | 0 | 0 | 0 | 0 |
 | near_miss | 0 | 0 | 0 | 0 | 0 |
 | red_light | 1 | 1 | 0 | 0 | 2 |
-| wrong_way | 0 | 0 | 0 | 0 | 0 |
+| wrong_way | 0 | 0 | 1 | 0 | 1 |
 | stopped_vehicle | 0 | 1 | 0 | 0 | 1 |
 | jaywalking | 2 | 0 | 1 | 0 | 3 |
-| failure_to_yield | 1 | 2 | 2 | 5 | 10 |
+| failure_to_yield | 1 | 3 | 2 | 4 | 10 |
 | stop_line | 2 | 1 | 1 | 1 | 5 |
 | congestion | 0 | 0 | 0 | 0 | 0 |
-| **all** | **6** | **5** | **4** | **6** | **21** |
+| **all** | **6** | **6** | **5** | **5** | **22** |
 
 Time per video, Part A + Part B, against the 3× limit:
 
 | Video | Duration | Part A | A + B | × duration | Share of the 3× budget |
 | --- | --- | --- | --- | --- | --- |
-| C3896 | 340.3 s | 201.8 s | 479.6 s | 1.41× | 47% |
-| C3897 | 317.8 s | 134.5 s | 412.9 s | 1.30× | 43% |
-| C3902 | 317.8 s | 128.6 s | 423.3 s | 1.33× | 44% |
-| C3905 | 127.6 s | 54.5 s | 173.8 s | 1.36× | 45% |
+| C3896 | 340.3 s | 233.1 s | 593.1 s | 1.74× | 58% |
+| C3897 | 317.8 s | 220.2 s | 553.3 s | 1.74× | 58% |
+| C3902 | 317.8 s | 225.0 s | 570.7 s | 1.80× | 60% |
+| C3905 | 127.6 s | 93.4 s | 225.6 s | 1.77× | 59% |
 
-In this run the Part B estimate (4K decoding measured at 14–20 ms/frame) made Part A raise its stride from 3 to 4
-on C3897, C3902 and C3905; with stride 3 they give 6 / 5 / 5 events (C3897 +1 failure_to_yield, C3902 +1
-wrong_way, C3905 −1 failure_to_yield). There are no ground-truth labels for the samples, so no scores are given.
+There are no ground-truth labels for the samples, so no scores are given.
 
 ## System requirements
 

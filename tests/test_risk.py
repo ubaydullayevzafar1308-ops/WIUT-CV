@@ -100,7 +100,7 @@ def clip(request):
 def fixed_pace(monkeypatch):
     """Switch off the wall-clock pacing, which by design reacts to machine speed."""
     params = copy.deepcopy(runtime_params())
-    params["risk"]["realtime_factor"] = 1e9
+    params["risk"]["realtime_fuse"] = 1e9
     monkeypatch.setattr(risk, "runtime_params", lambda: params)
 
 
