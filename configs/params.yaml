@@ -80,6 +80,8 @@ features:                   # per-sample kinematics of tracked objects; speeds i
   velocity_window_sec: 0.6  # central difference span for velocity and acceleration
   stationary_speed: 0.005   # below this an object counts as standing (~19 px/s in 4K, ~0.3 m/s in the near lanes)
   heading_min_speed: 0.01   # heading is undefined (NaN) below this speed
+  pedestrian_classes: [0]   # COCO person
+  pedestrian_inset: 0.01    # pedestrians count as on the carriageway only this far inside its edge (frame widths)
 
 postprocess:                # per-frame flags -> segments; per-class values override the default
   default: {merge_gap: 1.0, min_len: 0.5}
@@ -96,3 +98,20 @@ postprocess:                # per-frame flags -> segments; per-class values over
     illegal_u_turn: {merge_gap: 1.0, min_len: 1.0}
     accident: {merge_gap: 2.0, min_len: 1.0}
     near_miss: {merge_gap: 0.5, min_len: 0.5}
+
+rules:
+  vehicle_classes: [2, 3, 5, 7]   # COCO car, motorcycle, bus, truck
+  stopped_vehicle:
+    min_stop_sec: 10.0            # definition: stationary on the carriageway for 10 s or more
+    run_merge_sec: 2.0            # brief creeping inside a stop does not end it
+    signal_discharge_sec: 15.0    # after green starts, the avenue_near queue takes this long to clear
+    # distances below are in box widths of the standing vehicle, so they follow the perspective
+    queue_gap: 1.5                # another standing vehicle this close ahead = queued behind it
+    queue_lateral: 0.6            # ... and at most this far to the side
+    jam_radius: 2.5               # other standing vehicles within this distance ...
+    jam_neighbours: 2             # ... at least this many = the vehicle is part of a queue or jam
+  congestion:
+    min_vehicles: 5               # vehicles in the lane
+    crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
+    smooth_sec: 5.0               # rolling median of the per-frame counts and speeds
+    min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count

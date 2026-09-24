@@ -29,13 +29,14 @@ FEATURE_DTYPE = np.dtype([
     ("cls", np.int16),
     ("x", np.float32),            # smoothed anchor, normalised
     ("y", np.float32),
+    ("size", np.float32),         # smoothed box width, frame widths: the local scale of the scene (perspective)
     ("vx", np.float32),           # frame widths / s
     ("vy", np.float32),
     ("speed", np.float32),
     ("accel", np.float32),        # along the direction of motion (braking < 0), frame widths / s^2
     ("heading", np.float32),      # degrees, NaN when too slow to have a direction
     ("lane", np.int8),            # index into scene.lanes, NO_LANE outside every lane
-    ("on_carriageway", np.bool_),
+    ("on_carriageway", np.bool_),  # for pedestrians: at least pedestrian_inset inside the edge
     ("in_crossing", np.bool_),
     ("in_intersection", np.bool_),
     ("dwell", np.float32),        # seconds the object has been standing, up to this sample
@@ -94,6 +95,7 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
     out["frame"], out["track_id"], out["cls"] = rows["frame"], rows["track_id"], rows["cls"]
     out["t"] = rows["frame"] / tracks.info.fps
     anchor = np.stack([(rows["x1"] + rows["x2"]) / 2, rows["y2"]], axis=1).astype(np.float64)
+    width = (rows["x2"] - rows["x1"]).astype(np.float64)[:, None]
 
     for sl in track_slices(rows["track_id"]):
         t = out["t"][sl]
@@ -103,6 +105,7 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
         speed = np.hypot(vel[:, 0], vel[:, 1])
         direction = vel / np.maximum(speed, 1e-9)[:, None]
         out["x"][sl], out["y"][sl] = xy[:, 0], xy[:, 1]
+        out["size"][sl] = windowed_mean(t, width[sl], fp["smooth_window_sec"])[:, 0]
         out["vx"][sl], out["vy"][sl], out["speed"][sl] = vel[:, 0], vel[:, 1], speed
         out["accel"][sl] = np.sum(acc * direction, axis=1)
         heading = np.degrees(np.arctan2(vel[:, 1], vel[:, 0])) % 360
@@ -115,7 +118,9 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
         inside = contains_xy(lane.polygon, x, y) & (out["lane"] == NO_LANE)
         out["lane"][inside] = i
     xy = np.stack([x, y], axis=1)
+    person = np.isin(out["cls"], fp["pedestrian_classes"])
     out["on_carriageway"] = scene.on_carriageway(xy)
+    out["on_carriageway"][person] = scene.on_carriageway(xy[person], fp["pedestrian_inset"], aspect)
     out["in_crossing"] = scene.in_crossing(xy)
     out["in_intersection"] = contains_xy(scene.intersection, x, y)
     return out
