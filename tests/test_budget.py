@@ -45,13 +45,13 @@ def test_stride_is_capped():
 def test_plan_gives_part_a_the_rest_of_the_target(monkeypatch):
     monkeypatch.setattr(budget, "harness_seconds_per_frame", lambda path, params: 0.01)   # Part B: 30 s
     plan = plan_budget("video.mp4", INFO, start=budget.time.perf_counter(), params={"budget": BP})
-    reserve = 0.01 * INFO.n_frames * BP["part_b_safety"]
+    reserve = (0.01 * INFO.n_frames + BP["part_b_model_factor"] * INFO.duration) * BP["part_b_safety"]
     assert plan.part_b_reserve == pytest.approx(reserve)
     assert plan.part_a_allowance == pytest.approx(BP["target_factor"] * INFO.duration - reserve - BP["part_a_tail_sec"])
 
 
 def test_plan_falls_back_to_the_hard_limit(monkeypatch):
-    monkeypatch.setattr(budget, "harness_seconds_per_frame", lambda path, params: 0.06)   # Part B > 1.5x alone
+    monkeypatch.setattr(budget, "harness_seconds_per_frame", lambda path, params: 0.03)   # Part B > 1.5x alone
     plan = plan_budget("video.mp4", INFO, start=budget.time.perf_counter(), params={"budget": BP})
     hard = BP["hard_margin"] * BP["time_factor"] * INFO.duration
     assert plan.part_a_allowance == pytest.approx(hard - plan.part_b_reserve - BP["part_a_tail_sec"])
