@@ -48,6 +48,7 @@ class Scene:
     solid_lines: dict[str, LineString]
     stopping_zones: dict[str, Polygon] = field(default_factory=dict)
     signal_queue_zones: dict[str, Polygon] = field(default_factory=dict)
+    structures: dict[str, Polygon] = field(default_factory=dict)
     traffic_lights: list[dict] = field(default_factory=list)
 
     def warped(self, warp: np.ndarray) -> Scene:
@@ -69,6 +70,7 @@ class Scene:
             solid_lines={k: line(v) for k, v in self.solid_lines.items()},
             stopping_zones={k: poly(v) for k, v in self.stopping_zones.items()},
             signal_queue_zones={k: poly(v) for k, v in self.signal_queue_zones.items()},
+            structures={k: poly(v) for k, v in self.structures.items()},
             traffic_lights=[
                 {**tl, "roi": transform_points(warp, np.asarray(tl["roi"]).reshape(2, 2)).ravel().tolist()}
                 for tl in self.traffic_lights
@@ -139,6 +141,7 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
         solid_lines=named(data["solid_lines"], "line", LineString),
         stopping_zones=named(data.get("stopping_zones", []), "polygon", Polygon),
         signal_queue_zones=named(data.get("signal_queue_zones", []), "polygon", Polygon),
+        structures=named(data.get("structures", []), "polygon", Polygon),
         traffic_lights=data["traffic_lights"],
     )
 

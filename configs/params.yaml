@@ -102,6 +102,7 @@ postprocess:                # per-frame flags -> segments; per-class values over
 
 rules:
   vehicle_classes: [2, 3, 5, 7]   # COCO car, motorcycle, bus, truck
+  lane_width_cars: 1.2          # lane width in car box widths (measured: avenue_near, 4 lanes at the stop line)
   stopped_vehicle:
     min_stop_sec: 10.0            # definition: stationary on the carriageway for 10 s or more
     run_merge_sec: 2.0            # brief creeping inside a stop does not end it
@@ -130,13 +131,38 @@ rules:
     min_travel: 2.0               # having covered this many of its own box widths (not box jitter)
     run_merge_sec: 0.5            # gaps shorter than this inside a run are bridged
     review_min_sec: 1.0           # rejected runs at least this long are clipped for review
-  jaywalking:
-    min_duration_sec: 1.0         # on the carriageway outside crossings for at least this long
-    run_merge_sec: 0.5
+  pedestrians:                    # which person detections are real pedestrians (jaywalking, failure_to_yield)
     rider_classes: [1, 2, 3, 5, 7]  # a person whose anchor lies inside one of these boxes is riding, not walking
-    crossing_margin: 0.03         # people this close to a crossing (frame widths) are crossing on it, not jaywalking
-    min_track_travel: 0.03        # a person track that never moves this far (frame widths) is a static false detection
+    min_track_travel_boxes: 3.0   # a person track that never moves this many of its box widths is a static object
+    min_height: 0.03              # smaller boxes (far away) are unreliable
+  jaywalking:
+    min_duration_sec: 2.0         # on the carriageway outside crossings for at least this long
+    min_walk_boxes: 4.0           # ... walking at least this many of its own box widths (not standing at the kerb)
+    crossing_margin_lanes: 0.5    # people within this many lane widths of a crossing are crossing on it
+    corner_cut_sec: 6.0           # a run starting and ending at crossings / islands this short is cutting the corner
+    corner_near_lanes: 1.0        # 'at a crossing or island' = within this many lane widths of it
+    run_merge_sec: 0.5
     review_min_sec: 0.4
+  failure_to_yield:
+    ped_margin_lanes: 0.3         # a pedestrian this close to a crossing and walking towards it is stepping onto it
+    walk_speed: 0.01              # 'walking' (frame widths / s)
+    path_lanes: 0.75              # in the vehicle's path: its lane (half a lane each side) plus a step
+    behind_lanes: 0.25            # pedestrians more than this behind the vehicle are no longer in its way
+    legal_phases: [red, red_amber, amber]  # near crossing: pedestrians have right of way only while vehicles do not have green
+    along_angle: 30.0             # vehicles heading within this of the crossing's long axis ride along it (couriers), not across
+    along_check_min_angle: 45.0   # ... checked only where the crossing's axis is at least this far from its lanes in the image
+                                  # (perspective makes the near and far crossings look parallel to their traffic: 22-33 deg)
+    min_conflict_samples: 2       # the pedestrian is in the path for at least this many samples
+    min_speed: 0.01               # the vehicle drives through (moves faster than this on the crossing)
+  red_light:
+    red_phases: [red, red_amber]  # vehicle phases in which crossing the stop line is a violation
+    phase_grace_sec: 1.0          # crossings this close to the start or end of red are within the phase-reading uncertainty
+    review_window_sec: 3.0        # crossings up to this long before red / in amber are clipped as close calls
+  stop_line:
+    min_stop_sec: 1.0             # standing at least this long ...
+    front_past: 0.35              # ... with the vehicle front this many box widths past the stop line (line accuracy ~0.3) ...
+    max_past: 2.0                 # ... but not further (beyond the near crossing starts the intersection) ...
+    red_phases: [red, red_amber]  # ... while the vehicle phase is red
   congestion:
     min_vehicles: 5               # vehicles in the lane
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling

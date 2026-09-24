@@ -18,6 +18,7 @@ class VideoContext:
     ``features`` is the table from src/features.py (sorted by track, then frame);
     ``sample_t`` are the times of all sampled frames, including frames without boxes;
     ``aspect`` is height / width, the factor that makes normalised y comparable with x;
+    ``car_width_fit`` is the car box width against y (perspective, see features.fit_car_width);
     ``final_stride`` is the sampling stride tracking ended with.
     """
 
@@ -28,7 +29,12 @@ class VideoContext:
     duration: float
     aspect: float
     params: dict[str, Any]
+    car_width_fit: np.ndarray
     final_stride: int = 0
+
+    def lane_width(self, y: np.ndarray) -> np.ndarray:
+        """Width of a traffic lane (frame widths) at image height ``y``, from the perspective fit."""
+        return self.params["rules"]["lane_width_cars"] * np.polyval(self.car_width_fit, y)
 
     def lane_index(self, lane_id: str) -> int:
         return next(i for i, lane in enumerate(self.scene.lanes) if lane.id == lane_id)

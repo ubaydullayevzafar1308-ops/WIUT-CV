@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.budget import Plan, plan_budget
 from src.config import runtime_params
-from src.features import compute_features
+from src.features import compute_features, fit_car_width
 from src.postprocess import merge_segments
 from src.rules import VideoContext, apply_rules
 from src.scene import scene_for_video
@@ -22,14 +22,16 @@ def video_context(video_path: str, params: dict, plan: Plan | None = None) -> Vi
     info = probe(video_path)
     scene = scene_for_video(video_path, params)
     tracks = track_video(video_path, params, scene=scene, plan=plan)
+    features = compute_features(tracks, scene, params)
     return VideoContext(
-        features=compute_features(tracks, scene, params),
+        features=features,
         scene=scene,
         signal=tracks.signal_timeline(params),
         sample_t=tracks.frames / info.fps,
         duration=info.duration,
         aspect=info.height / info.width,
         params=params,
+        car_width_fit=fit_car_width(features),
         final_stride=int(tracks.timing.get("final_stride", params["video"]["sample_stride"])),
     )
 
