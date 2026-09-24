@@ -72,22 +72,41 @@ def in_queue(ctx: VideoContext, standing: np.ndarray) -> np.ndarray:
     return out
 
 
-def yielding_at_crossing(ctx: VideoContext, standing: np.ndarray) -> np.ndarray:
-    """Standing vehicles next to a crossing that has pedestrians on it at that moment."""
+def yielding_at_crossing(ctx: VideoContext, standing: np.ndarray, direction: np.ndarray) -> np.ndarray:
+    """Standing vehicles waiting for a pedestrian on the crossing right in front of them.
+
+    A sample is yielding while the vehicle stands at a crossing (anchor within
+    ``yield_distance`` box widths of it) and a pedestrian is on that crossing
+    ahead of the vehicle, in its lane. Only the first ``max_yield_sec`` of each
+    uninterrupted yielding run are excused; waiting longer counts as standing.
+    """
     p = ctx.params["rules"]["stopped_vehicle"]
     f = ctx.features
     person = np.isin(f["cls"], ctx.params["features"]["pedestrian_classes"])
-    xy = np.stack([f["x"], f["y"]], axis=1).astype(np.float64)
+    xy = np.stack([f["x"], f["y"] * ctx.aspect], axis=1).astype(np.float64)
     out = np.zeros(len(f), dtype=bool)
-    idx = np.flatnonzero(standing)
+    candidates = np.flatnonzero(standing & ~np.isnan(direction[:, 0]))
     for polygon in ctx.scene.crossings.values():
-        occupied = np.unique(f["frame"][person & contains_xy(polygon, xy[:, 0], xy[:, 1])])
-        near = idx[np.isin(f["frame"][idx], occupied)]
-        if not len(near):
-            continue
         scaled = affinity.scale(polygon, xfact=1.0, yfact=ctx.aspect, origin=(0, 0))
-        dist = shapely.distance(scaled, shapely.points(xy[near, 0], xy[near, 1] * ctx.aspect))
-        out[near[dist < p["yield_distance"] * f["size"][near]]] = True
+        at_crossing = candidates[shapely.distance(scaled, shapely.points(xy[candidates, 0], xy[candidates, 1]))
+                                 < p["yield_distance"] * f["size"][candidates]]
+        on_crossing = np.flatnonzero(person & contains_xy(polygon, f["x"].astype(np.float64), f["y"].astype(np.float64)))
+        by_frame: dict[int, list[int]] = {}
+        for row in on_crossing:
+            by_frame.setdefault(int(f["frame"][row]), []).append(row)
+        for row in at_crossing:
+            peds = by_frame.get(int(f["frame"][row]))
+            if peds is None:
+                continue
+            rel = (xy[peds] - xy[row]) / f["size"][row]
+            d = direction[row]
+            ahead, lateral = rel @ d, np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0])
+            out[row] |= bool(np.any((ahead > 0) & (ahead < p["yield_reach"]) & (lateral < p["yield_lateral"])))
+    for sl in track_slices(f["track_id"]):
+        t, flags = f["t"][sl], out[sl]
+        for start, end in flags_to_runs(t, flags):
+            flags[(t >= start + p["max_yield_sec"]) & (t < end)] = False
+        out[sl] = flags
     return out
 
 
@@ -98,10 +117,11 @@ class StoppedVehicle:
     Standing time counts towards the 10 s only while the box is inside the
     frame, the vehicle is not in a stopping zone (bus stop, kerbside parking),
     not held by the visible signal (avenue_near until the queue has discharged),
-    not part of a queue (``in_queue``) and not yielding to pedestrians on a
-    crossing. A stop is kept only if at least ``min_overtakers`` other vehicles
+    not part of a queue (``in_queue``) and not yielding to a pedestrian on the
+    crossing in front of it (``yielding_at_crossing``). A stop is kept only if
+    the vehicle was seen driving up to it, at least ``min_overtakers`` other vehicles
     drive past it in its direction while it stands (when the whole lane stands,
-    it is a queue), no standing neighbour moves off together with it, and, on
+    it is a queue), no standing neighbour ahead moves off together with it, and, on
     an approach held by a signal that is not visible, no other vehicle stands
     next to it.
     """
@@ -119,19 +139,19 @@ class StoppedVehicle:
         vehicle = np.isin(f["cls"], ctx.params["rules"]["vehicle_classes"])
         standing = vehicle & f["on_carriageway"] & (f["speed"] < ctx.params["features"]["stationary_speed"])
         since_green = ctx.seconds_since_green(f["t"])
+        direction = travel_direction(ctx)
         reasons = {
             "cut off by the frame edge": f["edge"],
             "stopping zone (bus stop / parking)": ctx.scene.in_stopping_zone(xy),
             "held by the visible signal": (f["lane"] == ctx.lane_index(SIGNAL_LANE))
             & ~(since_green >= p["signal_discharge_sec"]),
             "queue or jam": in_queue(ctx, standing),
-            "yielding to pedestrians": yielding_at_crossing(ctx, standing),
+            "yielding to pedestrians": yielding_at_crossing(ctx, standing, direction),
         }
         excluded = np.zeros(len(f), dtype=bool)
         for mask in reasons.values():
             excluded |= mask
         counts = standing & ~excluded
-        direction = travel_direction(ctx)
 
         found = []
         for sl in track_slices(f["track_id"]):
@@ -149,18 +169,21 @@ class StoppedVehicle:
                              "counted_sec": round(counted, 1), "x": float(np.median(f["x"][rows])),
                              "y": float(np.median(f["y"][rows])), "size": float(np.median(f["size"][rows]))}
                 candidate["overtakers"] = self._overtakers(ctx, rows, direction, p)
-                candidate["reason"], candidate["kept"] = self._verdict(ctx, rows, candidate, standing, reasons, p)
+                candidate["arrived"] = bool(np.any(f["speed"][sl][t < start] > p["arrive_speed"]))
+                candidate["reason"], candidate["kept"] = self._verdict(ctx, rows, candidate, standing, direction, reasons, p)
                 found.append(candidate)
         return found
 
-    def _verdict(self, ctx: VideoContext, rows: np.ndarray, c: dict, standing: np.ndarray,
+    def _verdict(self, ctx: VideoContext, rows: np.ndarray, c: dict, standing: np.ndarray, direction: np.ndarray,
                  reasons: dict[str, np.ndarray], p: dict) -> tuple[str, bool]:
+        if not c["arrived"]:
+            return "standing since it first appeared (not seen driving up)", False
         if c["counted_sec"] < p["min_stop_sec"]:
             share = {name: float(mask[rows].mean()) for name, mask in reasons.items()}
             return max(share, key=share.get), False
         if self._queued_at_hidden_signal(ctx, rows, standing, p):
             return "queue at the signal that is not visible", False
-        if self._departs_together(ctx, rows, c, standing, p):
+        if self._departs_together(ctx, rows, c, standing, direction, p):
             return "moved off together with standing neighbours (queue)", False
         if c["overtakers"] < p["min_overtakers"]:
             return f"not overtaken ({c['overtakers']} vehicles passed): the lane stands", False
@@ -198,14 +221,24 @@ class StoppedVehicle:
                                 & (f["t"] >= f["t"][rows[0]]) & (f["t"] <= f["t"][rows[-1]]))
         return len(self._neighbours(ctx, mid, others, p["hidden_signal_radius"])) > 0
 
-    def _departs_together(self, ctx: VideoContext, rows: np.ndarray, c: dict, standing: np.ndarray, p: dict) -> bool:
-        """A neighbour that was standing just before this vehicle moved off also moves off within the window."""
+    def _departs_together(self, ctx: VideoContext, rows: np.ndarray, c: dict, standing: np.ndarray,
+                          direction: np.ndarray, p: dict) -> bool:
+        """A neighbour ahead, standing just before this vehicle moved off, also moves off within the window.
+
+        Only neighbours ahead count: vehicles queued behind a stopped vehicle
+        naturally move off when it does.
+        """
         f = ctx.features
         last = rows[-1]
         window = p["depart_window_sec"]
         before = np.flatnonzero(standing & (f["track_id"] != f["track_id"][last])
                                 & (f["t"] >= c["end"] - window) & (f["t"] < c["end"]))
-        for track in np.unique(f["track_id"][self._neighbours(ctx, last, before, p["depart_radius"])]):
+        near = self._neighbours(ctx, last, before, p["depart_radius"])
+        d = direction[last]
+        if not np.isnan(d).any():
+            rel = np.stack([f["x"][near] - f["x"][last], (f["y"][near] - f["y"][last]) * ctx.aspect], axis=1)
+            near = near[rel @ d > 0]
+        for track in np.unique(f["track_id"][near]):
             after = (f["track_id"] == track) & (f["t"] >= c["end"] - window) & (f["t"] <= c["end"] + window)
             if np.any(f["speed"][after] > p["overtake_speed"]):
                 return True

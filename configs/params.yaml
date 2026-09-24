@@ -118,7 +118,11 @@ rules:
     depart_radius: 3.0            # standing vehicles this close that move off ...
     depart_window_sec: 3.0        # ... within this many seconds of the vehicle = it was in a queue
     hidden_signal_radius: 2.5     # in a signal_queue_zone, another standing vehicle this close = queue
-    yield_distance: 1.5           # this close to a crossing with pedestrians on it = yielding, not stopped
+    yield_distance: 0.5           # vehicle anchor this close to a crossing ...
+    yield_reach: 3.0              # ... with a pedestrian on it ahead of the vehicle within this ...
+    yield_lateral: 0.75           # ... and in its lane (this far to the side) = yielding, not stopped
+    max_yield_sec: 10.0           # yielding longer than this in one go counts as standing again
+    arrive_speed: 0.02            # a stop counts only if the vehicle moved faster than this before it
   congestion:
     min_vehicles: 5               # vehicles in the lane
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
