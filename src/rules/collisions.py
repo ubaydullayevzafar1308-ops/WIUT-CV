@@ -15,7 +15,7 @@ import shapely
 from src.features import central_difference, track_slices
 from src.risk import ground_plane, pair_ttc
 from src.rules.base import VideoContext, merged_runs
-from src.rules.pedestrians import reliable_mask, reliable_pedestrians
+from src.rules.pedestrians import on_structures, reliable_mask, reliable_pedestrians
 
 
 def ground_kinematics(ctx: VideoContext) -> dict[str, np.ndarray]:
@@ -241,12 +241,15 @@ class Collisions:
                 c["end"] = max(end, c["start"] + p["min_len_sec"])
                 touched = bool(np.any(self.gap[sl][(t >= rs) & (t <= end)] <= self.acc_p["contact_gap"]))
                 stopped = [i for i in (c["track_id"], c["other_id"]) if self._stops(i, t_close)]
+                unreliable = self._unreliable((c["track_id"], c["other_id"]), c["start"] - p["reliable_sec"],
+                                              c["end"] + p["reliable_sec"])
                 if evasive is None:
                     c["reason"], c["kept"] = f"time to contact {c['ttc']:.2f} s, no hard braking or swerve", False
-                elif np.any(self.jump & np.isin(f["track_id"], (c["track_id"], c["other_id"]))
-                            & (f["t"] >= c["start"] - p["react_before_sec"]) & (f["t"] <= c["end"])):
-                    c["reason"], c["kept"] = (f"time to contact {c['ttc']:.2f} s, but a box leaps "
-                                              f"(tracker switched objects)"), False
+                elif unreliable:
+                    c["reason"], c["kept"] = f"time to contact {c['ttc']:.2f} s, but {unreliable}", False
+                elif self._following(sl.start + k_close):
+                    c["reason"], c["kept"] = (f"time to contact {c['ttc']:.2f} s, but one follows the other "
+                                              f"in the same lane (queue)"), False
                 elif touched:
                     c["reason"], c["kept"] = f"time to contact {c['ttc']:.2f} s, but they touched", False
                 elif stopped:
@@ -258,6 +261,39 @@ class Collisions:
                 c["close"] = True
                 found.append(c)
         return found
+
+    def _unreliable(self, ids: tuple[int, int], t_from: float, t_to: float) -> str:
+        """Why the two tracks cannot be trusted over [t_from, t_to] ('' if they can): each must cover the
+        window without gaps, without leaps, and without touching the gantry or poles (occlusion)."""
+        p = self.nm_p
+        f = self.ctx.features
+        for track in ids:
+            rows = np.flatnonzero((f["track_id"] == track) & (f["t"] >= t_from) & (f["t"] <= t_to))
+            t = f["t"][rows]
+            if not len(rows) or t[0] > t_from + p["max_gap_sec"] or t[-1] < t_to - p["max_gap_sec"]:
+                return f"track {track} does not cover {p['reliable_sec']:.0f} s around the event"
+            if np.diff(t).max(initial=0.0) > p["max_gap_sec"]:
+                return f"track {track} has gaps around the event"
+            if self.jump[rows].any():
+                return f"the box of track {track} leaps (tracker switched objects)"
+            if on_structures(self.ctx, rows).any():
+                return f"track {track} passes the gantry or a pole (occluded)"
+        return ""
+
+    def _following(self, k: int) -> bool:
+        """Whether, at pair sample ``k``, one road user drives behind the other in the same lane: headings
+        within ``follow_angle`` and less than ``same_lane`` car box widths to the side of each other."""
+        p = self.nm_p
+        a, b = self.pairs["a"][k], self.pairs["b"][k]
+        headings = [self.kin["vel"][r] / self.kin["speed"][r] for r in (a, b) if self.kin["speed"][r] >= p["min_speed"]]
+        if not headings:
+            return True
+        if len(headings) == 2 and np.degrees(np.arccos(np.clip(headings[0] @ headings[1], -1, 1))) > p["follow_angle"]:
+            return False
+        u = np.sum(headings, axis=0)
+        u /= max(float(np.hypot(*u)), 1e-9)
+        rel = self.kin["pos"][b] - self.kin["pos"][a]
+        return abs(float(u[0] * rel[1] - u[1] * rel[0])) < p["same_lane"]
 
     def _stops(self, track_id: int, t0: float) -> bool:
         """Whether the track stands still for ``stop_sec`` within ``after_sec`` of ``t0``."""
@@ -278,8 +314,10 @@ class Collisions:
             brake = moving & (self.kin["along"][rows] <= -p["brake_decel"])
             swerve = moving & (np.abs(self.kin["lateral"][rows]) >= p["swerve_accel"])
             for mask, action in ((brake, "hard braking"), (swerve, "swerve")):
-                if mask.any():
-                    t = float(f["t"][rows[mask][0]])
+                runs = [s for s, e in merged_runs(f["t"][rows], mask, 0.0)
+                        if mask[(f["t"][rows] >= s) & (f["t"][rows] < e)].sum() >= p["evasive_min_samples"]]
+                if runs:
+                    t = runs[0]
                     if best is None or t < best[0]:
                         best = (t, f"{action} of track {track}")
         if best is None:
