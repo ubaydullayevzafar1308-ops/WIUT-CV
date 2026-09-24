@@ -65,12 +65,13 @@ device_profiles:            # overrides applied on top of the settings above, by
 
 budget:                     # wall-clock control of Part A so that Part A + Part B fit the harness limit
   time_factor: 3.0          # harness limit: Part A + Part B <= 3 x video duration
-  target_factor: 1.5        # what Part A + Part B should take
+  target_factor: 2.0        # Part A + Part B plan; Part A raises its stride only if A+B would exceed this
   hard_margin: 0.85         # share of the harness limit used when the target is out of reach
   part_b_probe_frames: 30   # 4K frames read with OpenCV (as the harness does) to estimate Part B
   part_b_warmup_frames: 5
   part_b_safety: 1.25       # multiplier on the estimated Part B decode time
-  part_b_model_factor: 0.0  # extra Part B seconds per video second for the risk model (0 while it is a stub)
+  part_b_model_factor: 0.5  # extra Part B seconds per video second for the risk model (Part B paces itself to
+                            # risk.realtime_factor = 1.0x including the ~0.5x of 4K decoding; measured 0.77-0.95x)
   part_a_tail_sec: 3.0      # reserved for rules and post-processing after tracking
   max_sample_stride: 30     # never sample fewer than 1 frame per second
   warmup_batches: 2         # detector batches ignored when measuring speed (model warm-up)
@@ -170,3 +171,40 @@ rules:
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
     smooth_sec: 5.0               # rolling median of the per-frame counts and speeds
     min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count
+
+risk:                       # Part B, src/risk.py; distances and speeds on the ground plane, in car box widths
+  ground:                   # image -> road plane (risk.ground_plane), measured on the samples
+    horizon_y: -0.07        # row where the car box width model reaches zero (features.fit_car_width: 0.14 * y + 0.01)
+    width_slope: 0.141      # car box width (frame widths) per unit of y
+    focal: 1.6              # frame widths; from the vanishing points of the avenue (tracks) and of its crossings
+  stride: 3                 # detect + track every stride-th frame; other frames return the last score
+  max_stride: 12
+  frame_width: 960          # 4K frames are resized to this width (a 4x reduction: OpenCV fast path)
+  imgsz: 960                # detector input size
+  realtime_factor: 1.0      # Part B may spend this many seconds per video second (harness decoding included)
+  pace_warmup_steps: 10     # processed frames ignored when measuring the pace (model warm-up)
+  registration_sec: 2.0     # the scene is aligned on the median of the frames seen in the first seconds
+  registration_frames: 10
+  history_sec: 1.5          # track history kept per object
+  velocity_window_sec: 1.0  # velocity = linear fit over this window; acceleration = change between its halves
+  min_track_samples: 4
+  min_track_span_sec: 0.6    # velocity needs at least this much track history
+  min_speed: 0.3            # moving (car box widths / s)
+  pair_radius: 10.0         # pairs further apart than this are not considered
+  contact_radius: 0.2       # vehicle - vehicle: anchors this close = contact (neighbouring lanes pass ~1 apart)
+  pedestrian_contact_radius: 0.6
+  min_closing_speed: 6.0    # car box widths / s; slower approaches are ordinary traffic (queues, overtaking)
+  min_gap: 0.3              # pairs already closer than contact + this (side by side, queues) are skipped
+  horizon_sec: 5.0          # only contacts expected within this time count
+  tau0: 1.5                 # TTC giving 0.5 before bonuses
+  slope: 3.0                # sigmoid slope (1 / s)
+  brake_decel: 8.0          # decelerating faster than this (car box widths / s^2) is hard braking ...
+  brake_bonus: 0.15         # ... and adds this (scaled up to 2x the threshold)
+  wrong_way_sec: 1.0        # a vehicle against its lane for this long ...
+  wrong_way_bonus: 0.25     # ... adds this
+  pedestrian_radius: 2.0    # a pedestrian on the road this close to a moving vehicle ...
+  pedestrian_min_closing: 0.5   # ... that approaches them (car box widths / s) ...
+  pedestrian_crossing_margin: 0.5  # ... and more than this many lane widths from any crossing ...
+  pedestrian_bonus: 0.15    # ... adds this
+  ema_alpha: 0.35           # smoothing per processed frame
+                            # calibrated with tools/risk_report.py --replay: 1 alarm on the 18 min of samples
