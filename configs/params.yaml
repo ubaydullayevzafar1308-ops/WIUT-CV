@@ -171,6 +171,44 @@ rules:
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
     smooth_sec: 5.0               # rolling median of the per-frame counts and speeds
     min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count
+  accident:                     # road-plane units (car box widths, risk.ground), see rules/collisions.py
+    footprint_depth: 0.35         # the bottom strip of a box, this fraction of its height, is its footprint on the road
+    check_radius: 3.0             # footprints are compared for pairs whose anchors are this close
+    contact_gap: 0.1              # footprints this close = contact
+    min_closing: 2.0              # the two approached each other at least this fast just before the contact (/ s)
+    before_sec: 1.0               # speed before the contact: the highest in this window ...
+    after_sec: 1.5                # ... speed after it: the lowest in this window
+    min_speed_drop: 2.0           # both lose at least this much speed (car box widths / s)
+    settle_sec: 5.0               # both stand still (or leave the frame) within this ...
+    stand_sec: 2.0                # ... for at least this long
+    exit_margin: 0.03             # a track ending this close to the frame border left the frame (else it was lost)
+    max_box_speed: 8.0            # a box moving faster than this many of its widths per second between samples ...
+    max_size_ratio: 1.5           # ... or changing its width by more than this = tracker switched objects
+    min_len_sec: 1.0              # shortest segment
+  near_miss:                    # road-plane units (car box widths, risk.ground), see rules/collisions.py
+    pair_radius: 10.0             # pairs of road users further apart are not considered
+    min_vehicle_width: 0.03       # pairs (both rules): vehicles narrower (far away) are too coarse on the road plane
+    contact_radius: 0.2           # time to contact (risk.pair_ttc): anchors this close = contact ...
+    pedestrian_contact_radius: 0.3
+    min_gap: 0.3                  # ... pairs already this much closer are side by side, not approaching
+    min_closing_speed: 2.0        # ... approaching at least this fast (/ s)
+    horizon_sec: 5.0
+    max_ttc: 1.0                  # a near miss needs a time to contact below this ...
+    run_merge_sec: 0.5
+    react_before_sec: 1.0         # ... and hard braking or a swerve of either from this long before ...
+    react_after_sec: 1.0          # ... to this long after it
+    min_speed: 1.0                # braking / swerving only counts while moving at least this fast (/ s)
+    brake_decel: 13.0             # hard braking (/ s^2): above 99.9% of moving vehicles on the samples (12.9) ...
+    swerve_accel: 8.0             # ... swerve: across the direction of motion (/ s^2; 99.9%: 4.3) ...
+    evasive_min_samples: 2        # ... for at least this many consecutive samples
+    reliable_sec: 2.0             # both tracks continuous and trustworthy this long before and after the event:
+    max_gap_sec: 0.3              # ... no gaps longer than this, no leaps, not touching the gantry or poles
+    follow_angle: 30.0            # headings closer than this (degrees) ...
+    same_lane: 0.6                # ... and less than this far to the side (car box widths) = following in one lane
+    separation: 2.0               # the segment ends when the two are this far apart again
+    after_sec: 3.0                # neither may come to a stop within this long after the closest approach ...
+    stop_sec: 1.0                 # ... (standing this long); leaving the frame is fine
+    min_len_sec: 0.5
 
 risk:                       # Part B, src/risk.py; distances and speeds on the ground plane, in car box widths
   ground:                   # image -> road plane (risk.ground_plane), measured on the samples
