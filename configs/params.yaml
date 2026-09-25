@@ -139,11 +139,14 @@ rules:
     min_track_travel_boxes: 3.0   # a person track that never moves this many of its box widths is a static object
     min_height: 0.03              # smaller boxes (far away) are unreliable
   jaywalking:
-    min_duration_sec: 2.0         # on the carriageway outside crossings for at least this long
-    min_walk_boxes: 4.0           # ... walking at least this many of its own box widths (not standing at the kerb)
-    crossing_margin_lanes: 0.5    # people within this many lane widths of a crossing are crossing on it
-    corner_cut_sec: 6.0           # a run starting and ending at crossings / islands this short is cutting the corner
-    corner_near_lanes: 1.0        # 'at a crossing or island' = within this many lane widths of it
+    min_duration_sec: 1.0         # on the road outside crossings for at least this long ...
+    min_walk_m: 3.0               # ... covering at least this much on the road plane (cutting a corner included)
+    box_width_m: 2.9              # metres per car box width on the road plane (a lane: 1.2 box widths ~ 3.5 m)
+    crossing_margin_lanes: 0.1    # people within this many lane widths of a crossing are on it (anchor noise)
+    corner_near_lanes: 1.0        # a run starting / ending this close to a crossing or island is reported as from / to it
+    standing_car_sec: 2.0         # a vehicle standing this long ...
+    kerb_lanes: 0.6               # ... in a stopping zone or this close to the carriageway edge, or on a crossing ...
+    car_radius_m: 3.0             # ... with the person this close: getting in / out, loading, walking round it
     run_merge_sec: 0.5
     review_min_sec: 0.4
   failure_to_yield:
@@ -169,7 +172,9 @@ rules:
     min_stop_sec: 1.0             # standing at least this long ...
     front_past: 0.35              # ... with the vehicle front this many box widths past the stop line (line accuracy ~0.3) ...
     max_past: 2.0                 # ... but not further (beyond the near crossing starts the intersection) ...
-    red_phases: [red, red_amber]  # ... while the vehicle phase is red
+    red_phases: [red, red_amber]  # ... while the vehicle phase is red ...
+    arrive_phases: [red, red_amber, amber]  # ... having got past the line (front_past) on one of these ...
+    arrive_before_red_sec: 10.0   # ... or on green at most this long before red (not stuck there in a jam since earlier)
   congestion:
     min_vehicles: 5               # vehicles in the lane
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling

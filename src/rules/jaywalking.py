@@ -8,6 +8,7 @@ from shapely import affinity
 from src.features import track_slices
 from src.postprocess import Segment
 from src.rules.base import VideoContext, merged_runs
+from src.risk import ground_plane
 from src.rules.pedestrians import reliable_pedestrians
 
 
@@ -22,20 +23,55 @@ def zone_distances(ctx: VideoContext, rows: np.ndarray) -> tuple[list[str], np.n
     return list(zones), dist
 
 
-class Jaywalking:
-    """A pedestrian walking on the carriageway outside a crossing, not just cutting a corner.
+def near_standing_vehicles(ctx: VideoContext, rows: np.ndarray, radius: float) -> dict[str, np.ndarray]:
+    """Which person ``rows`` are within ``radius`` (road plane, car box widths) of a vehicle standing at the kerb
+    (in a stopping zone or within ``kerb_lanes`` of the carriageway edge) or on a crossing, in the same frame.
 
-    On the carriageway uses the zone shrunk by ``pedestrian_inset`` (a person
-    waiting on the kerb is not on the road). Excluded: points within
-    ``crossing_margin_lanes`` lane widths of a crossing (people at the zebra's
-    edge), islands and stopping zones (boarding at the bus stop, walking to
-    parked cars). A run on the road is kept if it lasts ``min_duration_sec`` and
-    the person walks ``min_walk_boxes`` of their own box widths (not standing at
-    the kerb or median), unless it starts and ends at crossings or islands within
-    ``corner_cut_sec`` (cutting the corner, or a loop off an island and back).
-    Unreliable detections are rejected (see ``pedestrians.reliable_pedestrians``:
+    People there are getting in or out, loading, or walking round a car that blocks the zebra.
+    """
+    p = ctx.params["rules"]["jaywalking"]
+    f = ctx.features
+    g = ctx.params["risk"]["ground"]
+    out = {"next to a car standing at the kerb": np.zeros(len(rows), dtype=bool),
+           "walking round a car standing on the zebra": np.zeros(len(rows), dtype=bool)}
+    vehicle = np.isin(f["cls"], ctx.params["rules"]["vehicle_classes"])
+    standing = vehicle & (f["dwell"] >= p["standing_car_sec"])
+    cars = np.flatnonzero(standing)
+    if not len(cars) or not len(rows):
+        return out
+    xy = np.stack([f["x"][cars], f["y"][cars]], axis=1).astype(np.float64)
+    edge = shapely.distance(affinity.scale(ctx.scene.carriageway.exterior, xfact=1.0, yfact=ctx.aspect, origin=(0, 0)),
+                            shapely.points(xy[:, 0], xy[:, 1] * ctx.aspect))
+    kerb = ctx.scene.in_stopping_zone(xy) | (edge <= p["kerb_lanes"] * ctx.lane_width(xy[:, 1]))
+    zebra = ctx.scene.in_crossing(xy)
+    car_pos = ground_plane(f["x"][cars], f["y"][cars], g, ctx.aspect)
+    person_pos = ground_plane(f["x"][rows], f["y"][rows], g, ctx.aspect)
+    order = np.argsort(f["frame"][cars], kind="stable")
+    frames = f["frame"][cars][order]
+    for k, row in enumerate(rows):
+        lo, hi = np.searchsorted(frames, f["frame"][row], "left"), np.searchsorted(frames, f["frame"][row], "right")
+        same = order[lo:hi]
+        close = same[np.hypot(*(car_pos[same] - person_pos[k]).T) <= radius]
+        out["next to a car standing at the kerb"][k] = bool(kerb[close].any())
+        out["walking round a car standing on the zebra"][k] = bool(zebra[close].any())
+    return out
+
+
+class Jaywalking:
+    """A pedestrian walking over the asphalt of the carriageway outside the crossings.
+
+    On the road = on the carriageway (shrunk by ``pedestrian_inset``: a person
+    waiting on the kerb is not on it), outside crossings (and ``crossing_margin_lanes``
+    around them: people at the zebra's edge), islands and stopping zones (the bus
+    stop, parking). A run on the road is kept if it lasts ``min_duration_sec`` and
+    the person covers ``min_walk_m`` on the road plane (``risk.ground_plane``;
+    ``box_width_m`` per car box width) - including cutting the corner between
+    zebras and islands. Rejected: runs mostly within ``car_radius_m`` of a vehicle
+    standing at the kerb (getting in or out, loading) or on a crossing (walking
+    round it), and unreliable detections (see ``pedestrians.reliable_pedestrians``:
     static objects such as signal heads, gantry and poles, riders, tiny far-away
-    boxes, frame edge). The segment runs from the step onto the road to leaving it.
+    boxes, frame edge). The segment runs from the step onto the road to leaving
+    it; simultaneous walkers merge into one event in post-processing.
     """
 
     label = "jaywalking"
@@ -59,6 +95,12 @@ class Jaywalking:
         nearest_lanes = np.full(len(f), np.inf)
         nearest[idx] = dist.argmin(axis=1)
         nearest_lanes[idx] = dist.min(axis=1) / lane
+        road_rows = np.flatnonzero(on_road)
+        near_cars = {name: np.zeros(len(f), dtype=bool) for name in ("next to a car standing at the kerb",
+                                                                      "walking round a car standing on the zebra")}
+        for name, mask in near_standing_vehicles(ctx, road_rows, p["car_radius_m"] / p["box_width_m"]).items():
+            near_cars[name][road_rows] = mask
+        ground = ground_plane(f["x"], f["y"], ctx.params["risk"]["ground"], ctx.aspect)
         found = []
         for sl in track_slices(f["track_id"]):
             t = f["t"][sl]
@@ -69,28 +111,24 @@ class Jaywalking:
                     continue
                 rows = np.flatnonzero((t >= start) & (t < end) & on_road[sl]) + sl.start
                 first, last = rows[0], rows[-1]
-                walked = float(np.hypot(f["x"][last] - f["x"][first], (f["y"][last] - f["y"][first]) * ctx.aspect)
-                               / max(float(np.median(f["size"][rows])), 1e-6))
-                c = {"track_id": int(f["track_id"][first]), "start": start, "end": end, "walked_boxes": round(walked, 1),
+                walked = float(np.hypot(*(ground[last] - ground[first]))) * p["box_width_m"]
+                c = {"track_id": int(f["track_id"][first]), "start": start, "end": end, "walked_m": round(walked, 1),
                      "x": float(np.median(f["x"][rows])), "y": float(np.median(f["y"][rows]))}
-                from_zone = names[nearest[first]] if nearest_lanes[first] <= p["corner_near_lanes"] else None
-                to_zone = names[nearest[last]] if nearest_lanes[last] <= p["corner_near_lanes"] else None
+                from_zone = names[nearest[first]] if nearest_lanes[first] <= p["corner_near_lanes"] else "road"
+                to_zone = names[nearest[last]] if nearest_lanes[last] <= p["corner_near_lanes"] else "road"
                 unreliable = {name: float(m[rows].mean()) for name, m in masks.items() if name != "person"}
+                unreliable |= {name: float(m[rows].mean()) for name, m in near_cars.items()}
                 worst = max(unreliable, key=unreliable.get)
                 if unreliable[worst] > 0.5:
                     c["reason"], c["kept"] = worst, False
                 elif end - start < p["min_duration_sec"]:
                     c["reason"], c["kept"] = f"on the road only {end - start:.1f} s", False
-                elif from_zone and to_zone and end - start <= p["corner_cut_sec"]:
-                    kind = "loop off" if from_zone == to_zone else "cutting the corner:"
-                    c["reason"], c["kept"] = f"{kind} {from_zone} -> {to_zone} in {end - start:.1f} s", False
-                elif walked < p["min_walk_boxes"]:
-                    c["reason"], c["kept"] = f"standing on the road, walked only {walked:.1f} box widths", False
+                elif walked < p["min_walk_m"]:
+                    c["reason"], c["kept"] = f"on the road {end - start:.1f} s, but walked only {walked:.1f} m", False
                 else:
-                    route = f"{from_zone or 'road'} -> {to_zone or 'road'}"
-                    c["reason"], c["kept"] = (f"walked {walked:.1f} box widths in {end - start:.1f} s on the road "
-                                              f"outside crossings ({route})"), True
-                c["close"] = not c["kept"] and c["reason"].startswith(
-                    ("on the road only", "cutting the corner", "loop off", "standing on the road", "cut off"))
+                    c["reason"], c["kept"] = (f"walked {walked:.1f} m in {end - start:.1f} s on the road outside "
+                                              f"crossings ({from_zone} -> {to_zone})"), True
+                c["close"] = not c["kept"] and c["reason"].startswith(("on the road", "next to a car", "walking round",
+                                                                          "cut off"))
                 found.append(c)
         return found

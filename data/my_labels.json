@@ -2,7 +2,38 @@
  "C3896.MP4": {
   "duration": 340.34,
   "fps": 29.97,
-  "events": []
+  "events": [
+   [
+    49.6,
+    54.8,
+    "illegal_turn"
+   ],
+   [
+    66.1,
+    102.169,
+    "stop_line"
+   ],
+   [
+    78.946,
+    82.249,
+    "red_light"
+   ],
+   [
+    112.479,
+    117.784,
+    "jaywalking"
+   ],
+   [
+    164.3,
+    171.5,
+    "jaywalking"
+   ],
+   [
+    238.2,
+    253.9,
+    "jaywalking"
+   ]
+  ]
  },
  "C3897.MP4": {
   "duration": 317.817,
