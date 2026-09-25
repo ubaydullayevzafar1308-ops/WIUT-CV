@@ -97,7 +97,7 @@ postprocess:                # per-frame flags -> segments; per-class values over
     red_light: {merge_gap: 0.5, min_len: 0.5}
     stop_line: {merge_gap: 2.0, min_len: 2.0}
     failure_to_yield: {merge_gap: 0.5, min_len: 0.5}
-    solid_line_crossing: {merge_gap: 0.5, min_len: 0.5}
+    solid_line_crossing: {merge_gap: 0.5, min_len: 1.0}   # a lane change across a line takes at least ~1 s
     illegal_turn: {merge_gap: 1.0, min_len: 1.0}
     illegal_u_turn: {merge_gap: 1.0, min_len: 1.0}
     accident: {merge_gap: 2.0, min_len: 1.0}
