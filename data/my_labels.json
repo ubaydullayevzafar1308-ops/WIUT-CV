@@ -25,7 +25,7 @@
    ],
    [
     107.674,
-    112.0,
+    112,
     "illegal_turn"
    ],
    [
@@ -37,6 +37,11 @@
     164.3,
     171.5,
     "jaywalking"
+   ],
+   [
+    223.19,
+    223.99,
+    "failure_to_yield"
    ],
    [
     238.2,
@@ -80,9 +85,19 @@
     "stopped_vehicle"
    ],
    [
+    157.424,
+    158.725,
+    "failure_to_yield"
+   ],
+   [
     175.842,
     183.35,
     "illegal_turn"
+   ],
+   [
+    213.78,
+    215.682,
+    "failure_to_yield"
    ],
    [
     292.359,
@@ -177,6 +192,11 @@
     "jaywalking"
    ],
    [
+    18.285,
+    19.086,
+    "failure_to_yield"
+   ],
+   [
     20.9,
     22.2,
     "failure_to_yield"
@@ -205,6 +225,16 @@
     100.9,
     113.981,
     "jaywalking"
+   ],
+   [
+    107.674,
+    109.576,
+    "failure_to_yield"
+   ],
+   [
+    110.177,
+    111.778,
+    "failure_to_yield"
    ]
   ]
  }
