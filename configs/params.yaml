@@ -141,8 +141,9 @@ rules:
   jaywalking:
     min_duration_sec: 1.0         # on the road outside crossings for at least this long ...
     min_walk_m: 3.0               # ... covering at least this much on the road plane (cutting a corner included)
-    box_width_m: 2.9              # metres per car box width on the road plane (a lane: 1.2 box widths ~ 3.5 m)
-    crossing_margin_lanes: 0.1    # people within this many lane widths of a crossing are on it (anchor noise)
+    crossing_margin_m: 1.0        # people this close to a crossing (road plane) walk along the edge of the zebra
+    min_road_depth_m: 0.5         # ... on the road = at least this far inside the carriageway (islands cut out)
+    max_speed_mps: 4.0            # a median speed above this is a scooter or a bicycle, not a pedestrian
     corner_near_lanes: 1.0        # a run starting / ending this close to a crossing or island is reported as from / to it
     standing_car_sec: 2.0         # a vehicle standing this long ...
     kerb_lanes: 0.6               # ... in a stopping zone or this close to the carriageway edge, or on a crossing ...
@@ -235,6 +236,7 @@ risk:                       # Part B, src/risk.py; distances and speeds on the g
     horizon_y: -0.07        # row where the car box width model reaches zero (features.fit_car_width: 0.14 * y + 0.01)
     width_slope: 0.141      # car box width (frame widths) per unit of y
     focal: 1.6              # frame widths; from the vanishing points of the avenue (tracks) and of its crossings
+    box_width_m: 2.9        # metres per car box width on the road plane (a lane: 1.2 box widths ~ 3.5 m)
   sample_fps: 10            # detect + track this many frames per second of video (stride = fps / this);
                             # other frames return the last score
   max_stride: 12
