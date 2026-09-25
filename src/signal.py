@@ -27,7 +27,8 @@ LAMP_PERCENTILE = 95        # a lamp's score is a high percentile of its chroma:
 class SignalTimeline:
     """Signal readings of one video at ``sample_fps``, taken from the frames the tracker decodes.
 
-    ``ped``/``veh`` are the per-sample readings of each head, ``phase`` the
+    ``ped``/``veh`` are the per-sample readings of each head (``veh`` debounced,
+    see ``debounce``), ``phase`` the
     fused and smoothed vehicle phase of avenue_near (one of PHASES), ``walk`` the
     same before the vehicle clearance: green exactly while the green man of the
     pedestrian head facing the camera is lit. That head is green while the avenue
@@ -156,6 +157,31 @@ def smooth(t: np.ndarray, states: np.ndarray, params: dict[str, Any]) -> np.ndar
     return out
 
 
+def debounce(t: np.ndarray, states: np.ndarray, hold_sec: float) -> np.ndarray:
+    """Accept a new reading only if it holds for ``hold_sec``; shorter blips take the current state.
+
+    Unknown readings stay unknown and do not interrupt a run (in direct sun single
+    samples misread a lamp: a lone "red" amid green readings would end the vehicle
+    clearance early).
+    """
+    out = np.array(states, dtype=object)
+    known = np.flatnonzero(out != UNKNOWN)
+    current = None
+    for n, i in enumerate(known):
+        state = states[i]
+        if current is None or state == current:
+            current = state
+            continue
+        k = n
+        while k + 1 < len(known) and states[known[k + 1]] == state:
+            k += 1
+        if t[known[k]] - t[i] >= hold_sec:
+            current = state
+        else:
+            out[i] = current
+    return out
+
+
 def read_heads(frame: np.ndarray, rois: dict[str, list[float]], params: dict[str, Any]) -> tuple[str, str]:
     """(pedestrian, vehicle) readings of one BGR frame of any size; ``params`` is the ``signal`` section."""
     return pedestrian_state(_crop(frame, rois[PED_HEAD]), params), vehicle_state(_crop(frame, rois[VEH_HEAD]), params)
@@ -163,7 +189,8 @@ def read_heads(frame: np.ndarray, rois: dict[str, list[float]], params: dict[str
 
 def timeline_from_samples(t: np.ndarray, ped: np.ndarray, veh: np.ndarray, params: dict[str, Any]) -> SignalTimeline:
     """Fuse and smooth per-sample head readings (collected by the tracking loop) into a phase timeline."""
-    ped, veh = np.asarray(ped, dtype=object), np.asarray(veh, dtype=object)
+    ped = np.asarray(ped, dtype=object)
+    veh = debounce(np.asarray(t), np.asarray(veh, dtype=object), params["veh_hold_sec"])
     fused = np.array([fuse(p, v) for p, v in zip(ped, veh)], dtype=object)
     walk = smooth(t, fused, params)
     phase = vehicle_clearance(t, walk, veh, params)

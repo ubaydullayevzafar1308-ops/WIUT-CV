@@ -61,7 +61,7 @@ class Tracks:
         """Phase timeline from the signal samples; ``params`` is the full parameter dict."""
         names = np.array(PHASES, dtype=object)
         return timeline_from_samples(self.signal["t"], names[self.signal["ped"]], names[self.signal["veh"]],
-                                     params["signal"])
+                                     {**params["signal"], **params["signal_fusion"]})
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -6,12 +6,12 @@ import pytest
 
 from src.config import ROOT, load_params
 from src.scene import scene_for_video
-from src.signal import (AMBER, GREEN, RED, RED_AMBER, UNKNOWN, fuse, pedestrian_state, read_heads, smooth,
+from src.signal import (AMBER, GREEN, RED, RED_AMBER, UNKNOWN, debounce, fuse, pedestrian_state, read_heads, smooth,
                         timeline_from_samples, vehicle_clearance, vehicle_state)
 from src.video import read_frames
 
 PARAMS = load_params()
-SP = PARAMS["signal"]
+SP = {**PARAMS["signal"], **PARAMS["signal_fusion"]}
 
 # BGR of a lit lamp and of the unlit housing, as measured: direct sun is washed out, dusk is saturated
 LIGHTING = {
@@ -112,3 +112,12 @@ def test_timeline_on_dusk_sample():
     # phases read off the video by eye: red, green from ~34 s, amber ~72-75 s, red, green from ~115 s
     for t_sec, expected in [(15, RED), (50, GREEN), (73.5, AMBER), (95, RED), (122, GREEN)]:
         assert timeline.phase_at(t_sec) == expected, t_sec
+
+
+def test_debounce_drops_single_misreads_and_keeps_real_changes():
+    t = np.arange(0, 6, 0.5)
+    s = np.array([GREEN, GREEN, RED, GREEN, UNKNOWN, GREEN, RED, RED, UNKNOWN, RED, RED, RED], dtype=object)
+    out = debounce(t, s, 1.0)
+    assert out[2] == GREEN                      # a lone red amid green readings
+    assert out[4] == UNKNOWN                    # unknown stays unknown
+    assert list(out[6:]) == [RED, RED, UNKNOWN, RED, RED, RED]   # red from 3.0 s on holds for 2.5 s

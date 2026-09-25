@@ -52,15 +52,16 @@ def signed_distance(coords: np.ndarray, x: np.ndarray, y: np.ndarray, aspect: fl
 class IllegalTurn:
     """A vehicle from approach A that leaves its lane the wrong way.
 
-    From lane 1 it must turn right into the side street: going straight or left
-    (reaching one of ``through_lanes``) is an illegal turn. From lanes 2 and
-    beyond it must not enter the side street (its anchor reaches the side street
+    Only turns count (task definition: a turn from the wrong lane). From lane 1
+    the only turn allowed is right into the side street: turning left (reaching
+    one of ``left_lanes``) is an illegal turn, going straight on (``straight_lanes``)
+    is not a turn. From lanes 2 and beyond it must not enter the side street (its anchor reaches the side street
     exit, beyond the zebra), also not by driving through the intersection and
     round the triangle island. Vehicles crossing the stop line within
     ``lane_margin`` (along the line) of a lane boundary have an uncertain lane
     and are not judged. The segment runs from the start of the manoeuvre (the
-    vehicle moves off after the stop line; for the side street, its heading
-    leaves the approach direction by ``turn_start_deg``) until it reaches its
+    vehicle moves off after the stop line and its heading leaves the approach
+    direction by ``turn_start_deg``) until it reaches its
     destination.
     """
 
@@ -82,7 +83,8 @@ class IllegalTurn:
         dist, along = line.distance(f["x"], f["y"], ctx.aspect), line.along(f["x"], f["y"], ctx.aspect)
         x, y = f["x"].astype(np.float64), f["y"].astype(np.float64)
         side = contains_xy(scene.exits[SIDE_STREET], x, y)
-        through = np.isin(f["lane"], [ctx.lane_index(name) for name in p["through_lanes"]])
+        straight = np.isin(f["lane"], [ctx.lane_index(name) for name in p["straight_lanes"]])
+        left = np.isin(f["lane"], [ctx.lane_index(name) for name in p["left_lanes"]])
         vehicle = np.isin(f["cls"], ctx.params["rules"]["vehicle_classes"])
         approach_dir = next(ln for ln in scene.lanes if ln.id == scene.approach_stop_line).directions[0]
         found = []
@@ -95,19 +97,25 @@ class IllegalTurn:
                 continue
             k = int(cross[0])
             after = np.arange(len(t)) >= k
-            to_side, to_through = np.flatnonzero(after & side[sl]), np.flatnonzero(after & through[sl])
-            if not len(to_side) and not len(to_through):
+            to_side = np.flatnonzero(after & side[sl])
+            to_left, to_straight = np.flatnonzero(after & left[sl]), np.flatnonzero(after & straight[sl])
+            if len(to_side):   # the side street wins: round the triangle island it passes the exit leg first
+                destination, arrive = SIDE_STREET, int(to_side[0])
+            elif len(to_left):
+                destination, arrive = "left", int(to_left[0])
+            elif len(to_straight):
+                destination, arrive = "straight", int(to_straight[0])
+            else:
                 continue   # lost in the intersection: destination unknown
-            into_side = bool(len(to_side))   # the side street wins: round the triangle island it passes the exit leg first
-            arrive = int(to_side[0] if into_side else to_through[0])
+            into_side = destination == SIDE_STREET
             lane = int(np.sum(a[k] > bounds)) + 1
             margin = float(np.min(np.abs(a[k] - bounds)))
-            start = self._manoeuvre_start(ctx, sl, k, arrive, approach_dir if into_side else None, p)
+            start = self._manoeuvre_start(ctx, sl, k, arrive, None if destination == "straight" else approach_dir, p)
             c = {"track_id": int(f["track_id"][sl.start]), "start": start, "end": float(t[arrive]),
-                 "lane": lane, "along": round(float(a[k]), 3), "destination": SIDE_STREET if into_side else "through",
+                 "lane": lane, "along": round(float(a[k]), 3), "destination": destination,
                  "x": float(f["x"][sl.start + k]), "y": float(f["y"][sl.start + k])}
-            wrong = (lane == 1 and not into_side) or (lane > 1 and into_side)
-            where = "into the side street" if into_side else "straight on / left"
+            wrong = (lane == 1 and destination == "left") or (lane > 1 and into_side)
+            where = {SIDE_STREET: "into the side street", "left": "left", "straight": "straight on"}[destination]
             if margin < p["lane_margin"]:
                 c["reason"], c["kept"] = (f"lane uncertain (along {c['along']}, {margin:.3f} from a lane boundary), "
                                           f"went {where}"), False

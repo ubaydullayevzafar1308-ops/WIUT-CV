@@ -65,8 +65,9 @@ class Jaywalking:
     around them: people at the zebra's edge), islands and stopping zones (the bus
     stop, parking). A run on the road is kept if it lasts ``min_duration_sec`` and
     the person covers ``min_walk_m`` on the road plane (``risk.ground_plane``;
-    ``box_width_m`` per car box width) - including cutting the corner between
-    zebras and islands. Rejected: runs mostly within ``car_radius_m`` of a vehicle
+    ``risk.ground.box_width_m`` per car box width) - including cutting the corner
+    between zebras and islands - at a median speed of at most ``max_speed_mps``
+    (faster: a scooter or a bicycle, not a pedestrian). Rejected: runs mostly within ``car_radius_m`` of a vehicle
     standing at the kerb (getting in or out, loading) or on a crossing (walking
     round it), and unreliable detections (see ``pedestrians.reliable_pedestrians``:
     static objects such as signal heads, gantry and poles, riders, tiny far-away
@@ -98,9 +99,10 @@ class Jaywalking:
         road_rows = np.flatnonzero(on_road)
         near_cars = {name: np.zeros(len(f), dtype=bool) for name in ("next to a car standing at the kerb",
                                                                       "walking round a car standing on the zebra")}
-        for name, mask in near_standing_vehicles(ctx, road_rows, p["car_radius_m"] / p["box_width_m"]).items():
+        metres = ctx.params["risk"]["ground"]["box_width_m"]
+        for name, mask in near_standing_vehicles(ctx, road_rows, p["car_radius_m"] / metres).items():
             near_cars[name][road_rows] = mask
-        ground = ground_plane(f["x"], f["y"], ctx.params["risk"]["ground"], ctx.aspect)
+        ground = ground_plane(f["x"], f["y"], ctx.params["risk"]["ground"], ctx.aspect) * metres
         found = []
         for sl in track_slices(f["track_id"]):
             t = f["t"][sl]
@@ -111,7 +113,9 @@ class Jaywalking:
                     continue
                 rows = np.flatnonzero((t >= start) & (t < end) & on_road[sl]) + sl.start
                 first, last = rows[0], rows[-1]
-                walked = float(np.hypot(*(ground[last] - ground[first]))) * p["box_width_m"]
+                walked = float(np.hypot(*(ground[last] - ground[first])))
+                steps = np.hypot(*np.diff(ground[rows], axis=0).T) / np.maximum(np.diff(f["t"][rows]), 1e-6)
+                speed = float(np.median(steps)) if len(steps) else 0.0
                 c = {"track_id": int(f["track_id"][first]), "start": start, "end": end, "walked_m": round(walked, 1),
                      "x": float(np.median(f["x"][rows])), "y": float(np.median(f["y"][rows]))}
                 from_zone = names[nearest[first]] if nearest_lanes[first] <= p["corner_near_lanes"] else "road"
@@ -123,6 +127,8 @@ class Jaywalking:
                     c["reason"], c["kept"] = worst, False
                 elif end - start < p["min_duration_sec"]:
                     c["reason"], c["kept"] = f"on the road only {end - start:.1f} s", False
+                elif speed > p["max_speed_mps"]:
+                    c["reason"], c["kept"] = f"moving at {speed:.1f} m/s: a scooter or a bicycle, not a pedestrian", False
                 elif walked < p["min_walk_m"]:
                     c["reason"], c["kept"] = f"on the road {end - start:.1f} s, but walked only {walked:.1f} m", False
                 else:
