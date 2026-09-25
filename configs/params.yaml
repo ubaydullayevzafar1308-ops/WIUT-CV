@@ -180,6 +180,17 @@ rules:
     crawl_speed: 0.015            # median speed below this (frame widths / s) = standstill or crawling
     smooth_sec: 5.0               # rolling median of the per-frame counts and speeds
     min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count
+  illegal_turn:                 # approach A lanes (scene.json approach_lanes), see rules/lanes.py
+    lane_margin: 0.03             # crossing the stop line this close (along the line) to a lane boundary: lane uncertain
+    through_lanes: [avenue_exit, avenue_entry, avenue_far]  # reaching one of these = went straight on / left
+    turn_start_deg: 20.0          # a turn starts when the heading leaves the approach direction by this much
+    min_speed: 0.01               # ... while moving (frame widths / s)
+  solid_line_crossing:
+    stable_sec: 1.0               # on the old side this long before and on the new side this long after
+    clear_boxes: 0.25             # ... at least this many box widths away from the line (not jitter along it)
+    extent_margin: 0.02           # crossings within this share of a line's length from its ends do not count
+    min_speed: 0.01               # moving at the crossing (frame widths / s)
+    min_len_sec: 0.5
   accident:                     # road-plane units (car box widths, risk.ground), see rules/collisions.py
     footprint_depth: 0.35         # the bottom strip of a box, this fraction of its height, is its footprint on the road
     check_radius: 3.0             # footprints are compared for pairs whose anchors are this close

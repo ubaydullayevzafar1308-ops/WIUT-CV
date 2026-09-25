@@ -91,6 +91,38 @@
    "id": "median_edge_near",
    "_note": "solid yellow line along the median, near side",
    "line": [[0.05, 0.117], [0.2, 0.226], [0.455, 0.396], [0.6, 0.486]]
+  },
+  {
+   "id": "near_lane_1_2",
+   "_note": "approach A (avenue_near): solid line between lane 1 (kerb, by the signal pole) and lane 2, traced on the median of 90 C3896 frames",
+   "line": [[0.064, 0.308], [0.215, 0.472]]
+  },
+  {
+   "id": "near_lane_2_3",
+   "_note": "approach A: solid line between lanes 2 and 3",
+   "line": [[0.075, 0.256], [0.29, 0.461]]
+  },
+  {
+   "id": "near_lane_3_4",
+   "_note": "approach A: solid line between lanes 3 and 4",
+   "line": [[0.081, 0.212], [0.359, 0.449]]
+  },
+  {
+   "id": "near_lane_4_5",
+   "_note": "approach A: solid line between lanes 4 and 5 (the line between lane 5 and the lane along the median is dashed: not drawn)",
+   "line": [[0.033, 0.135], [0.42, 0.438]]
+  }
+ ],
+ "approach_lanes": {
+  "_note": "approach A: lanes are numbered from the kerb (1, by the signal pole) towards the median; a vehicle's lane is where its anchor crosses this stop line, between these boundaries (solid_lines ids, in order)",
+  "stop_line": "avenue_near",
+  "boundaries": ["near_lane_1_2", "near_lane_2_3", "near_lane_3_4", "near_lane_4_5"]
+ },
+ "exits": [
+  {
+   "id": "side_street",
+   "_note": "the side street beyond its zebra (bottom-left): a vehicle whose anchor gets here has turned into it",
+   "polygon": [[0.0, 0.79], [0.1, 0.73], [0.31, 1.0], [0.0, 1.0]]
   }
  ],
  "stopping_zones": [
