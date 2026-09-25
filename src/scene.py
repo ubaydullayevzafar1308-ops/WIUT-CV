@@ -50,6 +50,9 @@ class Scene:
     signal_queue_zones: dict[str, Polygon] = field(default_factory=dict)
     structures: dict[str, Polygon] = field(default_factory=dict)
     traffic_lights: list[dict] = field(default_factory=list)
+    exits: dict[str, Polygon] = field(default_factory=dict)
+    approach_stop_line: str = ""
+    lane_boundaries: list[str] = field(default_factory=list)   # solid_lines ids between lanes 1|2, 2|3, ...
 
     def warped(self, warp: np.ndarray) -> Scene:
         """The scene mapped into a video's coordinates with a 2x3 affine warp (see src/registration.py)."""
@@ -75,6 +78,9 @@ class Scene:
                 {**tl, "roi": transform_points(warp, np.asarray(tl["roi"]).reshape(2, 2)).ravel().tolist()}
                 for tl in self.traffic_lights
             ],
+            exits={k: poly(v) for k, v in self.exits.items()},
+            approach_stop_line=self.approach_stop_line,
+            lane_boundaries=list(self.lane_boundaries),
         )
 
     def on_carriageway(self, xy: np.ndarray, inset: float = 0.0, aspect: float = 1.0) -> np.ndarray:
@@ -143,6 +149,9 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
         signal_queue_zones=named(data.get("signal_queue_zones", []), "polygon", Polygon),
         structures=named(data.get("structures", []), "polygon", Polygon),
         traffic_lights=data["traffic_lights"],
+        exits=named(data.get("exits", []), "polygon", Polygon),
+        approach_stop_line=data.get("approach_lanes", {}).get("stop_line", ""),
+        lane_boundaries=list(data.get("approach_lanes", {}).get("boundaries", [])),
     )
 
 

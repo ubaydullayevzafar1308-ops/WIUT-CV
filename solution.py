@@ -20,8 +20,8 @@ from src import pipeline, risk
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
-# Official class ids we predict (9 of 14; illegal_turn, illegal_u_turn, solid_line_crossing,
-# road_obstacle and fire_smoke are not detected). See the task description for definitions
+# Official class ids we predict (11 of 14; illegal_u_turn, road_obstacle and fire_smoke are
+# not detected). See the task description for definitions
 # and start/end conventions. Entries may only be removed, never added.
 CLASSES: list[str] = [
     "accident",            # collision between road users / with a fixed object
@@ -31,6 +31,8 @@ CLASSES: list[str] = [
     "stopped_vehicle",     # stationary on the carriageway >= 10 s, not queued at a signal
     "jaywalking",          # pedestrian on the carriageway outside a crossing
     "failure_to_yield",    # driving through a crossing while a pedestrian is on it
+    "illegal_turn",        # turn from the wrong lane or in a prohibited direction
+    "solid_line_crossing", # lane change / manoeuvre across a solid marking
     "stop_line",           # stopped past the stop line on red
     "congestion",          # standstill / crawling traffic across all lanes of a direction
 ]

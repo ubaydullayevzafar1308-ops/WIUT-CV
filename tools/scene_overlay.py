@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import ROOT, load_params  # noqa: E402
 from src.registration import estimate_affine  # noqa: E402
+from src.rules.lanes import boundary_along  # noqa: E402
+from src.rules.signal_rules import stop_line  # noqa: E402
 from src.scene import Scene, load_scene  # noqa: E402
 
 CANVAS = (1920, 1080)
@@ -33,6 +35,8 @@ COLORS = {  # BGR
     "stop_line": (0, 0, 255),
     "solid_line": (0, 255, 255),
     "traffic_light": (0, 255, 0),
+    "exit": (0, 140, 255),
+    "approach_lane": (255, 255, 0),
 }
 
 
@@ -65,6 +69,8 @@ def render(frame: np.ndarray, scene: Scene, title: str) -> np.ndarray:
         fill(img, layer, polygon, COLORS["crossing"], f"crossing:{crossing_id}")
     for zone_id, polygon in scene.stopping_zones.items():
         fill(img, layer, polygon, COLORS["stopping_zone"], f"stopping:{zone_id}")
+    for exit_id, polygon in scene.exits.items():
+        fill(img, layer, polygon, COLORS["exit"], f"exit:{exit_id}")
     img = cv2.addWeighted(layer, FILL_ALPHA, img, 1 - FILL_ALPHA, 0)
 
     for lane in scene.lanes:
@@ -82,6 +88,15 @@ def render(frame: np.ndarray, scene: Scene, title: str) -> np.ndarray:
     for line_id, line in scene.solid_lines.items():
         cv2.polylines(img, [px(line.coords)], False, COLORS["solid_line"], 2, cv2.LINE_AA)
         text(img, f"solid:{line_id}", tuple(px(line.coords)[1] + [8, 0]), COLORS["solid_line"])
+    if scene.lane_boundaries:
+        aspect = CANVAS[1] / CANVAS[0]
+        line = stop_line(scene, aspect, scene.approach_stop_line)
+        bounds = [0.0] + [boundary_along(line, np.asarray(scene.solid_lines[b].coords), aspect)
+                          for b in scene.lane_boundaries] + [1.0]
+        for number, (lo, hi) in enumerate(zip(bounds[:-1], bounds[1:]), start=1):
+            point = (line.p0 + (lo + hi) / 2 * line.length * line.unit) / [1.0, aspect]
+            org = px(point[None])[0] + [-14, -22]
+            text(img, f"A{number}", (int(org[0]), int(org[1])), COLORS["approach_lane"])
     for light in scene.traffic_lights:
         x1, y1, x2, y2 = px(np.asarray(light["roi"]).reshape(2, 2)).ravel()
         cv2.rectangle(img, (x1 - 3, y1 - 3), (x2 + 3, y2 + 3), COLORS["traffic_light"], 2)
