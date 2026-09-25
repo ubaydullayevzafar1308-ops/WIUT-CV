@@ -28,18 +28,27 @@ class SignalTimeline:
     """Signal readings of one video at ``sample_fps``, taken from the frames the tracker decodes.
 
     ``ped``/``veh`` are the per-sample readings of each head, ``phase`` the
-    fused and smoothed phase (one of PHASES).
+    fused and smoothed vehicle phase of avenue_near (one of PHASES), ``walk`` the
+    same before the vehicle clearance: green exactly while the green man of the
+    pedestrian head facing the camera is lit. That head is green while the avenue
+    traffic moves: it is the signal of the pedestrians crossing the side street.
     """
 
     t: np.ndarray
     ped: np.ndarray
     veh: np.ndarray
     phase: np.ndarray
+    walk: np.ndarray
 
     def phase_at(self, t_sec: float | np.ndarray) -> np.ndarray:
         """Phase of the latest sample at or before ``t_sec`` (``unknown`` before the first sample)."""
         idx = np.searchsorted(self.t, t_sec, side="right") - 1
         return np.where(idx >= 0, self.phase[np.clip(idx, 0, None)], UNKNOWN)
+
+    def walk_at(self, t_sec: float | np.ndarray) -> np.ndarray:
+        """Pedestrian (side street) phase of the latest sample at or before ``t_sec``."""
+        idx = np.searchsorted(self.t, t_sec, side="right") - 1
+        return np.where(idx >= 0, self.walk[np.clip(idx, 0, None)], UNKNOWN)
 
 
 def _crop(frame: np.ndarray, roi: list[float]) -> np.ndarray:
@@ -156,5 +165,6 @@ def timeline_from_samples(t: np.ndarray, ped: np.ndarray, veh: np.ndarray, param
     """Fuse and smooth per-sample head readings (collected by the tracking loop) into a phase timeline."""
     ped, veh = np.asarray(ped, dtype=object), np.asarray(veh, dtype=object)
     fused = np.array([fuse(p, v) for p, v in zip(ped, veh)], dtype=object)
-    phase = vehicle_clearance(t, smooth(t, fused, params), veh, params)
-    return SignalTimeline(t=np.asarray(t), ped=ped, veh=veh, phase=phase)
+    walk = smooth(t, fused, params)
+    phase = vehicle_clearance(t, walk, veh, params)
+    return SignalTimeline(t=np.asarray(t), ped=ped, veh=veh, phase=phase, walk=walk)
