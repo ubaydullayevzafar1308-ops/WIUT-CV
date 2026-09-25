@@ -166,6 +166,10 @@ class StopLineViolation:
 
     "Past" means more than ``front_past`` and at most ``max_past`` box widths
     beyond the line (between the line and the intersection: on the near crossing).
+    The vehicle must have driven past the line (its anchor ``front_past`` beyond
+    it) on red or amber (``arrive_phases``) or at the end of green, at most
+    ``arrive_before_red_sec`` before red: a vehicle that crossed it earlier on
+    green and got stuck in a jam is not a stop_line case.
 
     The segment runs from the moment it stops to the next green (or the end of the video).
     """
@@ -187,8 +191,9 @@ class StopLineViolation:
         at_line = (standing & red & ~f["in_intersection"] & ~f["edge"] & (dist < 0)
                    & (dist > -p["max_past"] * f["size"])
                    & (along > -ALONG_SLACK) & (along < 1 + ALONG_SLACK))
-        past = at_line & (dist < -p["front_past"] * f["size"])
-        _, green_starts = phase_changes(ctx, p["red_phases"])
+        past_line = dist < -p["front_past"] * f["size"]
+        past = at_line & past_line
+        red_starts, green_starts = phase_changes(ctx, p["red_phases"])
         found = []
         for sl in track_slices(f["track_id"]):
             t = f["t"][sl]
@@ -201,7 +206,16 @@ class StopLineViolation:
                      "end": float(green[0]) if len(green) else ctx.duration,
                      "past_by": round(float(-np.median(dist[rows] / f["size"][rows])), 2),
                      "x": float(np.median(f["x"][rows])), "y": float(np.median(f["y"][rows]))}
-                if past_sec >= p["min_stop_sec"]:
+                crossed = np.flatnonzero(past_line[sl])
+                t_cross = float(t[crossed[0]]) if len(crossed) else start
+                arrived = str(ctx.signal.phase_at(t_cross))
+                red = red_starts[red_starts >= t_cross]
+                before_red = float(red[0]) - t_cross if len(red) else np.inf
+                if (past_sec >= p["min_stop_sec"] and arrived not in p["arrive_phases"]
+                        and before_red > p["arrive_before_red_sec"]):
+                    c["reason"], c["kept"] = (f"stood past the stop line on red, but crossed it on {arrived} "
+                                              f"{before_red:.0f} s before red (stuck in a jam)"), False
+                elif past_sec >= p["min_stop_sec"]:
                     c["reason"], c["kept"] = (f"stood {past_sec:.1f} s on red with its front "
                                               f"{c['past_by']} box widths past the stop line"), True
                 else:
