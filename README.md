@@ -82,6 +82,21 @@ Time per video, Part A + Part B, against the 3× limit:
 
 There are no ground-truth labels for the samples, so no scores are given.
 
+## Reference edge map and NDA
+
+`configs/reference_edges.png` is the template the scene alignment (`src/registration.py`) matches every video
+against: the gradient-magnitude edge map of the frame `configs/scene.json` was drawn on (C3896, middle frame),
+exactly what ECC compares, stored as a 16-bit PNG (960×540, values in [0, 1] × 65535). It was made with
+
+```python
+save_edges(edge_map(cv2.imread("configs/local/reference_frame.jpg"), 960), Path("configs/reference_edges.png"))
+```
+
+The frame itself is sample data and is not stored in the repository, nor in its history (`configs/local/` is
+git-ignored). The edge map was added with the organisers' permission (26.09.2026). Another template can
+be given with `WIUT_REFERENCE` (an edge map or a frame); without one, alignment is disabled and the scene is used as
+drawn.
+
 ## System requirements
 
 - Python 3.11, `pip install -r requirements.txt` (nothing else; OpenCV is headless, no `libGL`).
