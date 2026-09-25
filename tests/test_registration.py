@@ -9,8 +9,8 @@ import pytest
 
 from src import scene as scene_module
 from src.config import ROOT, load_params
-from src.registration import (IDENTITY, Registration, edge_map, load_reference, register_frame, register_video,
-                              transform_points)
+from src.registration import (IDENTITY, MISSING, REFERENCE_ENV, Registration, edge_map, load_reference, reference_path,
+                              register_frame, register_video, transform_points)
 from src.scene import Scene, load_scene, scene_for_video
 from src.video import probe, read_frame_at
 
@@ -43,13 +43,28 @@ def crossing_edge_strength(edges: np.ndarray, scene: Scene) -> float:
     return float(edges[mask > 0].mean())
 
 
+needs_reference = pytest.mark.skipif(not reference_path(PARAMS).exists(),
+                                     reason="reference frame is sample data, local only (configs/local/)")
+
+
+@needs_reference
 def test_reference_frame_is_small_and_loads():
-    path = ROOT / PARAMS["reference"]
-    assert path.stat().st_size <= 300 * 1024
-    assert load_reference(PARAMS["reference"]).shape[:2] == (540, 960)
+    assert reference_path(PARAMS).stat().st_size <= 300 * 1024
+    assert load_reference(PARAMS).shape[:2] == (540, 960)
+
+
+def test_missing_reference_disables_alignment(monkeypatch, caplog):
+    monkeypatch.setenv(REFERENCE_ENV, "configs/local/no_such_reference.jpg")
+    with caplog.at_level(logging.WARNING, logger="src.registration"):
+        frame_reg = register_frame(np.zeros((540, 960, 3), np.uint8), PARAMS)
+        video_reg = register_video("no_such_video.mp4", PARAMS)   # returns before opening the video
+    for reg in (frame_reg, video_reg):
+        assert not reg.ok and reg.reason == MISSING and np.array_equal(reg.warp, IDENTITY)
+    assert "reference missing" in caplog.text
 
 
 @pytest.mark.parametrize("video", sorted(EXPECTED_CENTRE_SHIFT))
+@needs_reference
 def test_sample_videos_register(video):
     path = SAMPLES / video
     if not path.exists():
@@ -68,8 +83,9 @@ def test_sample_videos_register(video):
         assert aligned >= unshifted * MIN_GAIN_ON_BIG_SHIFT
 
 
+@needs_reference
 def test_reference_registers_to_identity():
-    reg = register_frame(load_reference(PARAMS["reference"]), PARAMS)
+    reg = register_frame(load_reference(PARAMS), PARAMS)
     assert reg.ok and reg.cc > 0.99
     assert np.allclose(reg.warp, IDENTITY, atol=1e-3)
 
@@ -78,6 +94,7 @@ def test_reference_registers_to_identity():
     np.random.default_rng(0).integers(0, 255, (540, 960, 3), dtype=np.uint8),   # noise: low correlation
     np.full((540, 960, 3), 90, dtype=np.uint8),                                   # flat: ECC fails
 ])
+@needs_reference
 def test_unrelated_frames_are_rejected(frame):
     reg = register_frame(frame, PARAMS)
     assert not reg.ok and reg.reason

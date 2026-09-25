@@ -35,7 +35,8 @@ cache:
   dir: cache
 
 registration:               # aligning a video to the reference frame the scene was drawn on
-  reference: configs/reference_frame.jpg   # C3896 middle frame, 960x540; scene.json is drawn on it
+  reference: configs/local/reference_frame.jpg   # C3896 middle frame, 960x540, scene.json is drawn on it; sample
+                            # data: local only, never in git (WIUT_REFERENCE overrides; missing: no alignment)
   width: 960                # edge maps are compared at this width
   iterations: 300
   eps: 1.0e-6
@@ -44,6 +45,10 @@ registration:               # aligning a video to the reference frame the scene 
   max_shift: 0.08           # rejected if the frame centre moves more than this (normalised units)
   max_scale_change: 0.10    # rejected if the scale differs from 1 by more than this
   max_rotation_deg: 5.0     # rejected if rotated by more than this
+
+scene_match:                # does the scene fit the camera? judged by the traffic (pipeline.scene_matched), no reference
+  max_angle_deg: 45.0       # a moving vehicle follows its lane when heading within this of an allowed direction ...
+  min_share: 0.8            # ... and the scene matches when this share of them do (samples: 0.98 aligned, 0.92 unaligned)
 
 signal:                     # traffic-light phase of avenue_near from the heads visible in the frame
   sample_fps: 2             # heads are read this often

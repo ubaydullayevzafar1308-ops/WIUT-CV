@@ -5,11 +5,19 @@ measured between sample videos), so scene geometry drawn on one reference frame
 has to be warped onto each video. Alignment runs ECC on gradient-magnitude
 images, which is robust to the day/dusk lighting differences that break
 feature matching.
+
+The reference frame is a frame of the sample videos, which may not be published:
+it lives outside git (``registration.reference``, default configs/local/, or the
+``WIUT_REFERENCE`` environment variable). Without it, alignment is disabled and
+the scene is used as drawn.
 """
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -19,6 +27,10 @@ from src.config import resolve
 from src.video import probe, read_frame_at
 
 IDENTITY = np.eye(2, 3)
+REFERENCE_ENV = "WIUT_REFERENCE"   # overrides registration.reference
+MISSING = "reference missing, alignment disabled"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -79,13 +91,22 @@ def transform_points(warp: np.ndarray, points: np.ndarray) -> np.ndarray:
     return points @ warp[:, :2].T + warp[:, 2]
 
 
+def reference_path(params: dict[str, Any]) -> Path:
+    """Where the reference frame is: ``WIUT_REFERENCE`` if set, else ``registration.reference``."""
+    return resolve(os.environ.get(REFERENCE_ENV) or params["reference"])
+
+
 @lru_cache(maxsize=None)
-def load_reference(path: str) -> np.ndarray:
-    """The reference frame the scene is drawn on (loaded once)."""
-    image = cv2.imread(str(resolve(path)))
+def _load(path: Path) -> np.ndarray | None:
+    image = cv2.imread(str(path))
     if image is None:
-        raise FileNotFoundError(f"reference frame not found: {path}")
+        log.warning("%s (%s)", MISSING, path)
     return image
+
+
+def load_reference(params: dict[str, Any]) -> np.ndarray | None:
+    """The reference frame the scene is drawn on (loaded once), or None if it is missing (logged once)."""
+    return _load(reference_path(params))
 
 
 def rejection_reason(warp: np.ndarray, cc: float, params: dict[str, Any]) -> str:
@@ -106,7 +127,9 @@ def rejection_reason(warp: np.ndarray, cc: float, params: dict[str, Any]) -> str
 
 def register_frame(frame: np.ndarray, params: dict[str, Any]) -> Registration:
     """Align one BGR frame (any size) to the reference frame, rejecting implausible results."""
-    reference = load_reference(params["reference"])
+    reference = load_reference(params)
+    if reference is None:
+        return Registration(IDENTITY, 0.0, False, MISSING)
     try:
         warp, cc = estimate_affine(reference, frame, params)
     except cv2.error as err:
@@ -117,6 +140,8 @@ def register_frame(frame: np.ndarray, params: dict[str, Any]) -> Registration:
 
 def register_video(path: str, params: dict[str, Any]) -> Registration:
     """Align a video to the reference frame using the median of a few frames (moving traffic drops out)."""
+    if load_reference(params) is None:
+        return Registration(IDENTITY, 0.0, False, MISSING)
     info = probe(path)
     width = params["width"]
     height = round(info.height * width / info.width)

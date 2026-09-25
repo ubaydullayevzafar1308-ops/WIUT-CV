@@ -3,6 +3,9 @@
 *.MP4
 samples/proxy/
 
+# Sample data may not be published: local-only files (the reference frame)
+configs/local/
+
 # Generated
 cache/
 outputs/
