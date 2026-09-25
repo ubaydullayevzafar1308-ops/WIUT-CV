@@ -117,15 +117,20 @@ def main() -> int:
 
     scene = load_scene()
     reference = cv2.imread(args.frame)
+    if reference is None:   # sample frames are local only
+        print(f"{args.frame} missing: drawing on a blank canvas")
+        reference = np.zeros((CANVAS[1], CANVAS[0], 3), np.uint8)
     cv2.imwrite(args.out, render(reference, scene, f"configs/scene.json on {Path(args.frame).name} (reference)"))
-    print(f"wrote {Path(args.out).relative_to(ROOT)}")
+    print(f"wrote {args.out}")
     if args.all_videos:
         for frame_path in sorted(Path(args.frames).glob("*_mid.jpg")):
             frame = cv2.imread(str(frame_path))
+            if frame is None:
+                continue
             warp, cc = estimate_affine(reference, frame, load_params()["registration"])
             out = Path(args.out).with_name(f"scene_overlay_{frame_path.stem.removesuffix('_mid')}.png")
             cv2.imwrite(str(out), render(frame, scene.warped(warp), f"scene warped onto {frame_path.name} (ECC cc={cc:.2f})"))
-            print(f"wrote {out.relative_to(ROOT)}")
+            print(f"wrote {out}")
     return 0
 
 

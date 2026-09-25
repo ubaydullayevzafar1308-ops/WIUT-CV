@@ -1,7 +1,9 @@
 """YOLO detection + ByteTrack tracking over a video, with an on-disk cache of the tracks table.
 
 The same decoding pass also reads the traffic-light heads (src/signal.py), so a
-video is decoded once in Part A.
+video is decoded once in Part A. Tracks and head readings are cached apart: the
+tracks do not depend on the scene, the readings depend on where the heads are
+(the scene alignment), and are re-read by decoding alone when that changes.
 """
 from __future__ import annotations
 
@@ -63,22 +65,22 @@ class Tracks:
         return timeline_from_samples(self.signal["t"], names[self.signal["ped"]], names[self.signal["veh"]],
                                      {**params["signal"], **params["signal_fusion"]})
 
-    def save(self, path: Path) -> None:
+    def save(self, path: Path, signal_path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             path,
             info=np.array([self.info.fps, self.info.n_frames, self.info.width, self.info.height], dtype=np.float64),
             frames=self.frames,
             rows=self.rows,
-            signal=self.signal,
         )
+        np.savez_compressed(signal_path, signal=self.signal)
 
     @classmethod
-    def load(cls, path: Path) -> Tracks:
+    def load(cls, path: Path, signal: np.ndarray) -> Tracks:
         with np.load(path) as data:
             fps, n_frames, width, height = data["info"]
             info = VideoInfo(fps=float(fps), n_frames=int(n_frames), width=int(width), height=int(height))
-            return cls(info=info, frames=data["frames"], rows=data["rows"], signal=data["signal"])
+            return cls(info=info, frames=data["frames"], rows=data["rows"], signal=signal)
 
 
 def get_model(weights: str):
@@ -109,15 +111,71 @@ def light_rois(scene: Scene) -> dict[str, list[float]]:
     return {light["id"]: light["roi"] for light in scene.traffic_lights}
 
 
-def params_hash(params: dict[str, Any], scene: Scene) -> str:
-    """Short hash of everything that changes the cached output (device profile and head positions included)."""
-    relevant = {k: params[k] for k in ("video", "detector", "tracker", "signal")}
-    relevant["rois"] = {k: np.round(v, 4).tolist() for k, v in light_rois(scene).items()}
+def _hash(relevant: dict[str, Any]) -> str:
     return hashlib.sha1(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:10]
 
 
-def cache_path(video_path: str, params: dict[str, Any], scene: Scene) -> Path:
-    return resolve(params["cache"]["dir"]) / f"{Path(video_path).stem}_{params_hash(params, scene)}.npz"
+def params_hash(params: dict[str, Any]) -> str:
+    """Short hash of everything that changes the tracks (device profile included; not the scene)."""
+    return _hash({k: params[k] for k in ("video", "detector", "tracker")})
+
+
+def signal_hash(params: dict[str, Any], scene: Scene) -> str:
+    """Short hash of everything that changes the head readings: decoding, reading and where the heads are."""
+    relevant = {k: params[k] for k in ("video", "signal")}
+    relevant["rois"] = {k: np.round(v, 4).tolist() for k, v in light_rois(scene).items()}
+    return _hash(relevant)
+
+
+def cache_path(video_path: str, params: dict[str, Any]) -> Path:
+    return resolve(params["cache"]["dir"]) / f"{Path(video_path).stem}_{params_hash(params)}.npz"
+
+
+def signal_cache_path(video_path: str, params: dict[str, Any], scene: Scene) -> Path:
+    return resolve(params["cache"]["dir"]) / f"{Path(video_path).stem}_signal_{signal_hash(params, scene)}.npz"
+
+
+class SignalReader:
+    """Reads the traffic-light heads on the decoded frames, ``sample_fps`` times per second of video."""
+
+    def __init__(self, scene: Scene, params: dict[str, Any]):
+        self.rois, self.sp = light_rois(scene), params
+        self.next_t = 0.0
+        self.samples: list[tuple[float, int, int]] = []
+
+    def feed(self, t_sec: float, bgr: np.ndarray) -> None:
+        if t_sec >= self.next_t:
+            self.next_t = t_sec + 1.0 / self.sp["sample_fps"]
+            ped, veh = read_heads(bgr, self.rois, self.sp)
+            self.samples.append((t_sec, PHASES.index(ped), PHASES.index(veh)))
+
+    def array(self) -> np.ndarray:
+        return np.array(self.samples, dtype=SIGNAL_DTYPE)
+
+
+def decoded_frames(video_path: str, params: dict[str, Any]):
+    """(index, t_sec, bgr) of the frames Part A decodes (downscaled, every ``video.stride``-th)."""
+    vp = params["video"]
+    return prefetch(read_frames(
+        video_path,
+        stride=vp["stride"],
+        target_width=vp["target_width"],
+        threads=vp["decoder_threads"],
+        skip_nonref=vp["skip_nonref"],
+        interpolation=vp["interpolation"],
+        skip_check_frames=vp["skip_check_frames"],
+    ), vp["prefetch"])
+
+
+def read_signal(video_path: str, params: dict[str, Any], scene: Scene) -> np.ndarray:
+    """Head readings of a video by decoding alone (no detector): same frames and times as in tracking."""
+    start = time.perf_counter()
+    reader = SignalReader(scene, params["signal"])
+    for _, t_sec, bgr in decoded_frames(video_path, params):
+        reader.feed(t_sec, bgr)
+    log.info("%s: %d signal samples read by decoding alone in %.1fs", Path(video_path).name, len(reader.samples),
+             time.perf_counter() - start)
+    return reader.array()
 
 
 def track_video(
@@ -140,15 +198,21 @@ def track_video(
     params = params or runtime_params()
     scene = scene or scene_for_video(video_path, params)
     use_cache = params["cache"]["enabled"] if use_cache is None else use_cache
-    path = cache_path(video_path, params, scene)
+    path, signal_path = cache_path(video_path, params), signal_cache_path(video_path, params, scene)
     if use_cache and path.exists():
         log.info("tracks cache hit: %s", path.name)
-        return Tracks.load(path)
+        if signal_path.exists():
+            with np.load(signal_path) as data:
+                signal = data["signal"]
+        else:   # the heads moved (another scene alignment): re-read them, no detector needed
+            signal = read_signal(video_path, params, scene)
+            np.savez_compressed(signal_path, signal=signal)
+        return Tracks.load(path, signal)
 
     tracks, adapted = _run_tracking(video_path, params, scene, plan)
     if use_cache and not adapted:
         try:
-            tracks.save(path)
+            tracks.save(path, signal_path)
         except OSError as err:
             log.warning("could not write tracks cache %s: %s", path, err)
     return tracks
@@ -164,7 +228,7 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
     tracker = make_tracker(params["tracker"], info.fps / stride)
     controller = StrideController(stride, plan.part_a_deadline if plan else float("inf"),
                                   info.n_frames, params["budget"])
-    rois = light_rois(scene)
+    signal = SignalReader(scene, sp)
     predict_kwargs = dict(
         imgsz=dp["imgsz"],
         conf=dp["conf"],
@@ -174,30 +238,18 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
         quantize=16 if dp["fp16"] and device.startswith("cuda") else None,
         verbose=False,
     )
-    frames = prefetch(read_frames(
-        video_path,
-        stride=vp["stride"],
-        target_width=vp["target_width"],
-        threads=vp["decoder_threads"],
-        skip_nonref=vp["skip_nonref"],
-        interpolation=vp["interpolation"],
-        skip_check_frames=vp["skip_check_frames"],
-    ), vp["prefetch"])
+    frames = decoded_frames(video_path, params)
 
     sampled: list[int] = []
     chunks: list[np.ndarray] = []
-    signal: list[tuple[float, int, int]] = []
     timing = {"decode_wait": 0.0, "detect": 0.0, "track": 0.0}
     t_start = time.perf_counter()
     batch_idx: list[int] = []
     batch_img: list[np.ndarray] = []
-    next_sample, next_signal_t = 0, 0.0
+    next_sample = 0
     t0 = time.perf_counter()
     for index, t_sec, bgr in frames:
-        if t_sec >= next_signal_t:
-            next_signal_t = t_sec + 1.0 / sp["sample_fps"]
-            ped, veh = read_heads(bgr, rois, sp)
-            signal.append((t_sec, PHASES.index(ped), PHASES.index(veh)))
+        signal.feed(t_sec, bgr)
         if index < next_sample:
             continue
         next_sample = index + controller.stride
@@ -224,11 +276,11 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
         "(waiting for decoder %.1fs, detect %.1fs, track %.1fs)",
         Path(video_path).name, len(sampled), controller.stride,
         f", raised from {controller.initial_stride}" if controller.adapted else "",
-        len(rows), len(np.unique(rows["track_id"])), len(signal), device,
+        len(rows), len(np.unique(rows["track_id"])), len(signal.samples), device,
         timing["total"], timing["decode_wait"], timing["detect"], timing["track"],
     )
     tracks = Tracks(info=info, frames=np.asarray(sampled, dtype=np.int32), rows=rows,
-                    signal=np.array(signal, dtype=SIGNAL_DTYPE), timing=timing)
+                    signal=signal.array(), timing=timing)
     return tracks, controller.adapted
 
 

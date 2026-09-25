@@ -182,13 +182,17 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     reference = cv2.imread(args.reference)
-    base = backdrop(reference)
+    if reference is None:   # sample frames are local only: overlays on a dark canvas, no alignment
+        print(f"{args.reference} missing: drawing on a blank canvas without alignment")
+    base = backdrop(reference if reference is not None else np.zeros((CANVAS[1], CANVAS[0], 3), np.uint8))
     reg_params = load_params()["registration"]
 
     per_video, stats = [], {}
     for path in sorted(p for p in Path(args.videos).iterdir() if p.suffix in VIDEO_EXTS):
         tracks = track_video(str(path))
-        warp, cc = estimate_affine(reference, cv2.imread(str(Path(args.frames) / f"{path.stem}_mid.jpg")), reg_params)
+        frame = cv2.imread(str(Path(args.frames) / f"{path.stem}_mid.jpg"))
+        warp, cc = (estimate_affine(reference, frame, reg_params) if reference is not None and frame is not None
+                    else (np.eye(2, 3), 0.0))
         a = anchors_with_velocity(tracks, invert(warp))
         per_video.append(a)
         stats[path.name] = {**video_stats(tracks, a), "alignment_cc": round(cc, 3),

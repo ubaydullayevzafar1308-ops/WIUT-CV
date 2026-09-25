@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import ROOT, runtime_params  # noqa: E402
 from src.features import compute_features  # noqa: E402
-from src.registration import invert, register_video, transform_points  # noqa: E402
+from src.registration import invert, load_reference, register_video, transform_points  # noqa: E402
 from src.scene import SCENE_PATH, Scene, load_scene  # noqa: E402
 from src.tracking import track_video  # noqa: E402
 
@@ -119,7 +119,8 @@ def main() -> int:
     print(f"pedestrian anchors on the carriageway: old {pedestrian_share(old, a, params, 0.0):.3f}, "
           f"new {pedestrian_share(new, a, params, 0.0):.3f}, new with {inset} inset {pedestrian_share(new, a, params, inset):.3f}")
 
-    frame = cv2.resize(cv2.imread(str(ROOT / params["registration"]["reference"])), CANVAS)
+    reference = load_reference(params["registration"])   # None without the (local-only) reference frame
+    frame = cv2.resize(reference, CANVAS) if reference is not None else np.zeros((CANVAS[1], CANVAS[0], 3), np.uint8)
     img = (frame * 0.6).astype(np.uint8)
     for scene, color in ((old, (0, 0, 255)), (new, (0, 255, 0))):
         cv2.polylines(img, [(np.asarray(scene.carriageway.exterior.coords) * CANVAS).astype(np.int32)], True, color, 2)

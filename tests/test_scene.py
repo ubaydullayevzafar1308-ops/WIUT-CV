@@ -58,3 +58,19 @@ def test_registration_recovers_translation_under_lighting_change():
     assert warp[1, 2] == pytest.approx(-7 / 540, abs=1.5 / 540)
     points = np.array([[0.3, 0.4], [0.7, 0.2]])
     assert np.allclose(transform_points(invert(warp), transform_points(warp, points)), points)
+
+
+def test_scene_matched_by_traffic_following_the_lanes():
+    from src.config import load_params
+    from src.features import FEATURE_DTYPE
+    from src.pipeline import scene_matched
+
+    params, scene = load_params(), load_scene()
+    lane = next(i for i, ln in enumerate(scene.lanes) if ln.id == "avenue_near")
+    f = np.zeros(200, dtype=FEATURE_DTYPE)
+    f["cls"], f["lane"], f["speed"] = 2, lane, 0.05
+    f["vx"], f["vy"] = scene.lanes[lane].directions[0] * 0.05
+    assert scene_matched(f, scene, params)[0]                    # everyone drives along the lane
+    f["vx"], f["vy"] = -f["vx"], -f["vy"]
+    matched, share = scene_matched(f, scene, params)             # everyone against it: not this camera
+    assert not matched and share == 0.0
