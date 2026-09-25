@@ -94,6 +94,37 @@
 <script>
 const DATA = /*DATA*/null/*END*/;
 const STORE_KEY = "wiut-label-review-v1";
+// Prior decisions from data/my_labels.json (injected): matched detections are pre-accepted with the label's times,
+// labels with no matching detection appear as "label" rows; REVIEW_CLASSES stay open for review.
+const PRIOR_LABELS = /*LABELS*/null/*END*/ || {};
+const REVIEW_CLASSES = new Set(/*REVIEW*/[]/*END*/);
+const REVIEW_NAMES = [...REVIEW_CLASSES].join(" + ") || "all classes";
+const isReview = label => REVIEW_CLASSES.size === 0 || REVIEW_CLASSES.has(label);
+let onlyReview = false;
+function overlap(a, b) { return Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start)); }
+function priorFor(name) {
+  const dets = meta(name).events;
+  const labs = ((PRIOR_LABELS[name] || {}).events || []).map(([start, end, label], i) => ({ start, end, label, i }));
+  const decisions = {}, extra = [], used = new Set();
+  const pairs = [];
+  for (const l of labs) for (const d of dets) {
+    if (d.label !== l.label) continue;
+    const ov = overlap(l, d), shorter = Math.min(l.end - l.start, d.end - d.start);
+    if (shorter > 0 && ov / shorter >= 0.5) pairs.push({ l, d, iou: ov / (Math.max(l.end, d.end) - Math.min(l.start, d.start)) });
+  }
+  pairs.sort((a, b) => b.iou - a.iou);
+  const matchedLab = new Set();
+  for (const p of pairs) {
+    if (used.has(p.d.id) || matchedLab.has(p.l.i)) continue;
+    used.add(p.d.id); matchedLab.add(p.l.i);
+    decisions[p.d.id] = { status: "accepted", start: p.l.start, end: p.l.end };
+  }
+  for (const l of labs) if (!matchedLab.has(l.i))
+    extra.push({ id: `label-${l.label}@${l.start}`, label: l.label, start: l.start, end: l.end, note: "from my_labels.json" });
+  return { decisions, extra };
+}
+const PRIOR = {};
+function prior(name) { return PRIOR[name] = PRIOR[name] || priorFor(name); }
 const COLORS = {
   accident: "#d62728", near_miss: "#ff7f0e", red_light: "#e377c2", wrong_way: "#8c564b", illegal_u_turn: "#bcbd22",
   stopped_vehicle: "#1f77b4", jaywalking: "#2ca02c", failure_to_yield: "#9467bd", illegal_turn: "#17becf",
@@ -121,10 +152,15 @@ function meta(name) { return DATA.videos.find(v => v.name === name); }
 // All events of a video: detected ones (with the reviewer's edits) and added ones.
 function events(name) {
   const vs = videoState(name);
-  const detected = meta(name).events.map(e => {
-    const d = vs.decisions[e.id] || {};
+  const pr = prior(name);
+  const base = [...meta(name).events.map(e => ({ ...e, source: "detected" })),
+                ...pr.extra.map(e => ({ ...e, source: "label" }))];
+  const detected = base.map(e => {
+    const p = pr.decisions[e.id] || (e.source === "label" ? { status: "accepted" } : {});
+    const u = vs.decisions[e.id] || {};
+    const d = { ...p, ...u };
     return { id: e.id, label: e.label, start: d.start ?? e.start, end: d.end ?? e.end,
-             status: d.status || null, source: "detected", note: e.note };
+             status: d.status || null, source: e.source, note: e.note };
   });
   const added = vs.added.map(a => ({ ...a, status: a.status || "accepted", source: "added" }));
   return [...detected, ...added].sort((a, b) => a.start - b.start);
@@ -144,17 +180,17 @@ function renderTabs() {
   tabs.innerHTML = "";
   for (const v of DATA.videos) {
     const evs = events(v.name);
-    const done = evs.filter(e => e.status).length;
+    const review = evs.filter(e => isReview(e.label)); const done = review.filter(e => e.status).length;
     const b = document.createElement("button");
     b.className = "tab" + (v.name === current ? " active" : "");
-    b.innerHTML = `${v.name} <small>${done}/${evs.length}</small>`;
+    b.innerHTML = `${v.name} <small>${done}/${review.length}</small>`;
     b.onclick = () => { current = v.name; selected = null; loadVideo(); render(); };
     tabs.appendChild(b);
   }
   const all = DATA.videos.flatMap(v => events(v.name));
   document.getElementById("progress").textContent =
     `${all.filter(e => e.status === "accepted").length} ✓ · ${all.filter(e => e.status === "rejected").length} ✗ · ` +
-    `${all.filter(e => !e.status).length} to review`;
+    `${all.filter(e => !e.status && isReview(e.label)).length} to review (${REVIEW_NAMES})`;
 }
 
 function renderTimeline() {
@@ -206,7 +242,7 @@ function renderTimeline() {
 function renderTable() {
   const tbody = document.getElementById("events");
   tbody.innerHTML = "";
-  for (const e of events(current)) {
+  for (const e of events(current).filter(x => !onlyReview || isReview(x.label) || x.source === "added")) {
     const tr = document.createElement("tr");
     tr.className = (e.status || "") + (e.id === selected ? " selected" : "");
     tr.innerHTML = `
@@ -314,6 +350,15 @@ document.getElementById("add-button").onclick = () => {
   save(); render();
 };
 document.getElementById("export").onclick = exportLabels;
+{
+  const t = document.createElement("button");
+  t.id = "only-review";
+  const label = () => t.textContent = onlyReview ? `Showing: ${REVIEW_NAMES} (show all)` : `Showing: all classes (show ${REVIEW_NAMES})`;
+  label();
+  t.style.marginRight = "8px";
+  t.onclick = () => { onlyReview = !onlyReview; label(); render(); };
+  document.getElementById("export").before(t);
+}
 
 document.addEventListener("keydown", ev => {
   if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;

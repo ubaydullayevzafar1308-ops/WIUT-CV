@@ -9,7 +9,6 @@ from src.features import track_slices
 from src.postprocess import Segment
 from src.rules.base import VideoContext, merged_runs
 from src.risk import ground_plane
-from src.rules.ground import crossing_distance_m, road_depth_m
 from src.rules.pedestrians import reliable_pedestrians
 
 
@@ -61,15 +60,14 @@ def near_standing_vehicles(ctx: VideoContext, rows: np.ndarray, radius: float) -
 class Jaywalking:
     """A pedestrian walking over the asphalt of the carriageway outside the crossings.
 
-    On the road = on the carriageway at least ``min_road_depth_m`` inside its
-    edge and away from the islands (a person on the kerb or the far pavement is
-    not on it), more than ``crossing_margin_m`` from every crossing (people walk
-    along the edge of a zebra) and outside stopping zones (the bus stop, parking);
-    distances on the road plane (``rules.ground``). A run on the road is kept if it
-    lasts ``min_duration_sec`` and the person covers ``min_walk_m`` - including
-    cutting the corner between zebras and islands - at a median speed of at most
-    ``max_speed_mps`` (faster: a scooter or a bicycle, not a pedestrian).
-    Rejected: runs mostly within ``car_radius_m`` of a vehicle
+    On the road = on the carriageway (shrunk by ``pedestrian_inset``: a person
+    waiting on the kerb is not on it), outside crossings (and ``crossing_margin_lanes``
+    around them: people at the zebra's edge), islands and stopping zones (the bus
+    stop, parking). A run on the road is kept if it lasts ``min_duration_sec`` and
+    the person covers ``min_walk_m`` on the road plane (``risk.ground_plane``;
+    ``risk.ground.box_width_m`` per car box width) - including cutting the corner
+    between zebras and islands - at a median speed of at most ``max_speed_mps``
+    (faster: a scooter or a bicycle, not a pedestrian). Rejected: runs mostly within ``car_radius_m`` of a vehicle
     standing at the kerb (getting in or out, loading) or on a crossing (walking
     round it), and unreliable detections (see ``pedestrians.reliable_pedestrians``:
     static objects such as signal heads, gantry and poles, riders, tiny far-away
@@ -90,11 +88,10 @@ class Jaywalking:
         xy = np.stack([f["x"], f["y"]], axis=1).astype(np.float64)
         on_road = masks["person"] & f["on_carriageway"] & ~f["in_crossing"] & ~ctx.scene.in_stopping_zone(xy)
         idx = np.flatnonzero(on_road)
-        on_road[idx[(crossing_distance_m(ctx, idx) <= p["crossing_margin_m"])
-                    | (road_depth_m(ctx, idx) < p["min_road_depth_m"])]] = False
-        idx = np.flatnonzero(on_road)
         names, dist = zone_distances(ctx, idx)
         lane = ctx.lane_width(f["y"][idx])
+        crossing_cols = [i for i, n in enumerate(names) if n.startswith("crossing:")]
+        on_road[idx[dist[:, crossing_cols].min(axis=1) < p["crossing_margin_lanes"] * lane]] = False
         nearest = np.full(len(f), -1)
         nearest_lanes = np.full(len(f), np.inf)
         nearest[idx] = dist.argmin(axis=1)

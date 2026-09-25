@@ -4,7 +4,11 @@
 
 The page embeds the events the rules detect (merged per class, with the reasons
 of the detections behind each one) and plays the 720p proxies from
-samples/proxy/ (tools/make_proxies.sh). It needs no server: open it with a
+samples/proxy/ (tools/make_proxies.sh). Labels already in data/my_labels.json
+come pre-decided: detections matching a label (same class, overlapping at least
+half of the shorter one) are accepted with the label's times, labels without a
+detection appear as rows of their own. ``--review-classes`` are the classes still
+under review: the progress counts them and a button filters the list to them. It needs no server: open it with a
 double click. Decisions stay in the browser's localStorage; "Export" downloads
 my_labels.json in the ground-truth format (accepted and added events; duration
 and fps of the original videos) - save it as data/my_labels.json.
@@ -30,6 +34,9 @@ from src.video import probe  # noqa: E402
 VIDEO_EXTS = {".mp4", ".MP4"}
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "review.html"
 PLACEHOLDER = "/*DATA*/null/*END*/"
+LABELS_PLACEHOLDER = "/*LABELS*/null/*END*/"
+REVIEW_PLACEHOLDER = "/*REVIEW*/[]/*END*/"
+LABELS = ROOT / "data" / "my_labels.json"
 
 
 def event_notes(ctx, label: str, start: float, end: float) -> str:
@@ -46,6 +53,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--videos", default=str(ROOT / "samples"))
     ap.add_argument("--out", default=str(ROOT / "outputs" / "review.html"))
+    ap.add_argument("--labels", default=str(LABELS), help="labels to pre-decide the events with")
+    ap.add_argument("--review-classes", nargs="*", default=["illegal_turn", "solid_line_crossing"],
+                    help="classes still under review (none: all)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
 
@@ -69,7 +79,11 @@ def main() -> int:
         })
         print(f"{path.name}: {len(merged)} events")
     data = {"classes": list(OFFICIAL_CLASSES), "videos": videos}
-    page = TEMPLATE.read_text(encoding="utf-8").replace(PLACEHOLDER, json.dumps(data, ensure_ascii=False))
+    labels = json.loads(Path(args.labels).read_text(encoding="utf-8")) if Path(args.labels).exists() else {}
+    page = (TEMPLATE.read_text(encoding="utf-8")
+            .replace(PLACEHOLDER, json.dumps(data, ensure_ascii=False))
+            .replace(LABELS_PLACEHOLDER, json.dumps(labels, ensure_ascii=False))
+            .replace(REVIEW_PLACEHOLDER, json.dumps(args.review_classes)))
     out.write_text(page, encoding="utf-8")
     print(f"wrote {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out}")
     return 0

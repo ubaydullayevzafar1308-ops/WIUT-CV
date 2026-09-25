@@ -55,6 +55,9 @@ signal:                     # traffic-light phase of avenue_near from the heads 
   vehicle_green_after_ped_sec: 3.0   # measured on all samples: after the green man goes red, vehicles keep
   vehicle_amber_sec: 3.0             # (flashing) green for 3 s, then amber for 3 s, then red
 
+signal_fusion:              # how the cached head readings become phases (outside `signal`, whose readings are cached)
+  veh_hold_sec: 1.0         # a new vehicle-head reading counts only if it holds this long (single misreads in sun)
+
 device_profiles:            # overrides applied on top of the settings above, by device kind
   cpu:                      # no GPU: small model, small input, fewer frames
     detector:
@@ -141,8 +144,7 @@ rules:
   jaywalking:
     min_duration_sec: 1.0         # on the road outside crossings for at least this long ...
     min_walk_m: 3.0               # ... covering at least this much on the road plane (cutting a corner included)
-    crossing_margin_m: 1.0        # people this close to a crossing (road plane) walk along the edge of the zebra
-    min_road_depth_m: 0.5         # ... on the road = at least this far inside the carriageway (islands cut out)
+    crossing_margin_lanes: 0.1    # people within this many lane widths of a crossing are on it (anchor noise)
     max_speed_mps: 4.0            # a median speed above this is a scooter or a bicycle, not a pedestrian
     corner_near_lanes: 1.0        # a run starting / ending this close to a crossing or island is reported as from / to it
     standing_car_sec: 2.0         # a vehicle standing this long ...
@@ -162,8 +164,6 @@ rules:
     min_conflict_samples: 2       # the pedestrian is in the path for at least this many samples
     min_speed: 0.01               # the vehicle drives through (moves faster than this on the crossing)
     excluded_crossings: [avenue_far]  # its signal is not visible: whether its pedestrians cross legally is unknown
-    walk_green_crossings: [side_street]  # here only pedestrians on the zebra itself while their signal (the pedestrian
-                                  # head facing the camera) is green count
     merge_track_gap_sec: 5.0      # one vehicle = one event: its passes closer than this are joined
   red_light:
     red_phases: [red, red_amber]  # vehicle phases in which crossing the stop line is a violation
@@ -183,7 +183,8 @@ rules:
     min_duration_sec: 90.0        # longer than one signal cycle (75 s measured), so red-light queues do not count
   illegal_turn:                 # approach A lanes (scene.json approach_lanes), see rules/lanes.py
     lane_margin: 0.03             # crossing the stop line this close (along the line) to a lane boundary: lane uncertain
-    through_lanes: [avenue_exit, avenue_entry, avenue_far]  # reaching one of these = went straight on / left
+    straight_lanes: [avenue_exit]          # reaching this = went straight on (not a turn)
+    left_lanes: [avenue_entry, avenue_far]  # reaching one of these = turned left
     turn_start_deg: 20.0          # a turn starts when the heading leaves the approach direction by this much
     min_speed: 0.01               # ... while moving (frame widths / s)
   solid_line_crossing:
