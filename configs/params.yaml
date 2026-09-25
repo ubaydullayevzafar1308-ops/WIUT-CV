@@ -158,6 +158,8 @@ rules:
     min_conflict_samples: 2       # the pedestrian is in the path for at least this many samples
     min_speed: 0.01               # the vehicle drives through (moves faster than this on the crossing)
     excluded_crossings: [avenue_far]  # its signal is not visible: whether its pedestrians cross legally is unknown
+    walk_green_crossings: [side_street]  # here only pedestrians on the zebra itself while their signal (the pedestrian
+                                  # head facing the camera) is green count
     merge_track_gap_sec: 5.0      # one vehicle = one event: its passes closer than this are joined
   red_light:
     red_phases: [red, red_amber]  # vehicle phases in which crossing the stop line is a violation

@@ -77,6 +77,14 @@ def test_vehicle_clearance_after_green_man():
     assert all(out[t >= green_end + SP["vehicle_amber_sec"]] == RED)
 
 
+def test_walk_phase_turns_red_with_the_green_man():
+    t = np.arange(0.0, 20.0, 0.5)
+    ped = np.where(t < 10.0, GREEN, RED).astype(object)
+    timeline = timeline_from_samples(t, ped, np.full(len(t), UNKNOWN, dtype=object), SP)
+    assert timeline.walk_at(9.5) == GREEN and timeline.walk_at(10.5) == RED   # pedestrians: red at once ...
+    assert timeline.phase_at(10.5) == GREEN                                       # ... vehicles keep green (clearance)
+
+
 def test_clearance_never_returns_from_amber_to_green():
     t = np.arange(0, 8, 0.5)
     phase = np.array([GREEN] * 2 + [RED] * 14, dtype=object)

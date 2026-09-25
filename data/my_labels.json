@@ -1,0 +1,48 @@
+{
+ "C3896.MP4": {
+  "duration": 340.34,
+  "fps": 29.97,
+  "events": []
+ },
+ "C3897.MP4": {
+  "duration": 317.817,
+  "fps": 29.97,
+  "events": []
+ },
+ "C3902.MP4": {
+  "duration": 317.817,
+  "fps": 29.97,
+  "events": []
+ },
+ "C3905.MP4": {
+  "duration": 127.627,
+  "fps": 29.97,
+  "events": [
+   [
+    20.9,
+    22.2,
+    "failure_to_yield"
+   ],
+   [
+    38.805,
+    41.008,
+    "failure_to_yield"
+   ],
+   [
+    72.6,
+    79.9,
+    "jaywalking"
+   ],
+   [
+    76.343,
+    114.681,
+    "stop_line"
+   ],
+   [
+    100.9,
+    110.9,
+    "jaywalking"
+   ]
+  ]
+ }
+}

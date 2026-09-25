@@ -10,6 +10,7 @@ from src.postprocess import Segment
 from src.rules.base import VideoContext, merged_runs
 from src.rules.pedestrians import reliable_mask, reliable_pedestrians
 from src.rules.stopping import travel_direction
+from src.signal import GREEN
 
 SIGNAL_CROSSING = "avenue_near"   # the crossing on the approach whose signal is read
 STEP_LOOKAHEAD_SEC = 0.5          # "walking towards the crossing" = closer to it this much later
@@ -52,7 +53,9 @@ class FailureToYield:
     the vehicle leaves the frame); passes of one vehicle closer than
     ``merge_track_gap_sec`` are one event. On the near crossing, whose signal is
     read, it only counts while the vehicles do not have green: then the
-    pedestrians cross legally; on green they cross against the signal.
+    pedestrians cross legally; on green they cross against the signal. On
+    ``walk_green_crossings`` (the side street) only pedestrians walking on the
+    zebra itself while their own signal (``SignalTimeline.walk``) is green count.
     Crossings in ``excluded_crossings`` (signal not visible) are not checked.
     """
 
@@ -84,6 +87,7 @@ class FailureToYield:
             on_crossing[vehicle_rows] = shapely.intersects(polygon, boxes)
             wheels_on = vehicle & contains_xy(polygon, f["x"].astype(np.float64), f["y"].astype(np.float64))
             peds = self._pedestrians_at(ctx, polygon, pedestrian, p)
+            on_crossing_ped = contains_xy(polygon, f["x"].astype(np.float64), f["y"].astype(np.float64))
             axis = crossing_axis(polygon, ctx.aspect)
             check_along = along_is_measurable(ctx, polygon, axis, p["along_check_min_angle"])
             for sl in track_slices(f["track_id"]):
@@ -95,10 +99,15 @@ class FailureToYield:
                     if not wheels_on[rows].any():
                         continue   # only the box overlaps the crossing (tall vehicle passing beside it)
                     present, conflict = 0, 0
+                    walk_green = name in p["walk_green_crossings"]
                     for row in rows[~f["edge"][rows]]:
                         others = peds.get(int(f["frame"][row]))
                         if others is None:
                             continue
+                        if walk_green:
+                            others = others[on_crossing_ped[others]]   # walking on the zebra itself ...
+                            if not len(others) or ctx.signal.walk_at(f["t"][row]) != GREEN:
+                                continue                              # ... on their green
                         present += 1
                         d = direction[row]
                         if np.isnan(d).any():
@@ -108,6 +117,12 @@ class FailureToYield:
                         lateral, ahead = np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0]), rel @ d
                         conflict += bool(np.any((lateral <= p["path_lanes"] * lane) & (ahead >= -p["behind_lanes"] * lane)))
                     if not present:
+                        if walk_green and self._pedestrians_during(peds, f["frame"][rows]):
+                            found.append({"track_id": int(f["track_id"][sl.start]), "start": start, "end": end,
+                                          "crossing": name, "conflict_samples": 0, "kept": False, "close": True,
+                                          "x": float(np.median(f["x"][rows])), "y": float(np.median(f["y"][rows])),
+                                          "reason": f"pedestrians at crossing {name}, but not walking on it on "
+                                                    f"their green (pedestrian signal red)"})
                         continue
                     c = {"track_id": int(f["track_id"][sl.start]), "start": start, "end": end, "crossing": name,
                          "conflict_samples": conflict, "x": float(np.median(f["x"][rows])),
@@ -152,6 +167,10 @@ class FailureToYield:
             else:
                 joined.append(dict(c))
         return joined + [c for c in found if not c["kept"]]
+
+    @staticmethod
+    def _pedestrians_during(peds: dict[int, np.ndarray], frames: np.ndarray) -> bool:
+        return any(int(frame) in peds for frame in frames)
 
     @staticmethod
     def _pedestrians_at(ctx: VideoContext, polygon, pedestrian: np.ndarray, p: dict) -> dict[int, np.ndarray]:
