@@ -35,8 +35,8 @@ cache:
   dir: cache
 
 registration:               # aligning a video to the reference frame the scene was drawn on
-  reference: configs/local/reference_frame.jpg   # C3896 middle frame, 960x540, scene.json is drawn on it; sample
-                            # data: local only, never in git (WIUT_REFERENCE overrides; missing: no alignment)
+  reference: configs/reference_edges.png   # edge map (16-bit) of the C3896 middle frame scene.json is drawn on; the
+                            # frame itself is sample data, never in git (WIUT_REFERENCE overrides; missing: no alignment)
   width: 960                # edge maps are compared at this width
   iterations: 300
   eps: 1.0e-6

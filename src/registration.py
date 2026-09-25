@@ -6,10 +6,12 @@ has to be warped onto each video. Alignment runs ECC on gradient-magnitude
 images, which is robust to the day/dusk lighting differences that break
 feature matching.
 
-The reference frame is a frame of the sample videos, which may not be published:
-it lives outside git (``registration.reference``, default configs/local/, or the
-``WIUT_REFERENCE`` environment variable). Without it, alignment is disabled and
-the scene is used as drawn.
+The reference frame is a frame of the sample videos, which may not be published;
+the repository keeps only its edge map (configs/reference_edges.png: exactly
+what ECC compares, 16-bit), published with the organisers' permission. The
+template is ``registration.reference`` or the ``WIUT_REFERENCE`` environment
+variable: an edge map (16-bit, one channel) or a frame (its edge map is
+computed). Without it, alignment is disabled and the scene is used as drawn.
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ from src.video import probe, read_frame_at
 IDENTITY = np.eye(2, 3)
 REFERENCE_ENV = "WIUT_REFERENCE"   # overrides registration.reference
 MISSING = "reference missing, alignment disabled"
+EDGE_SCALE = 65535                 # an edge map in [0, 1] is stored as 16-bit PNG
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +64,8 @@ def estimate_affine(reference: np.ndarray, frame: np.ndarray, params: dict[str, 
     """Affine warp from reference to frame, in normalised [0, 1] coordinates.
 
     Args:
-        reference: BGR reference frame (the one the scene was drawn on).
+        reference: BGR reference frame (the one the scene was drawn on), or its edge map
+            (``edge_map`` at ``params["width"]``: 2-D, [0, 1]).
         frame: BGR frame of the video to align.
         params: the ``registration`` section of params.yaml.
 
@@ -69,7 +73,7 @@ def estimate_affine(reference: np.ndarray, frame: np.ndarray, params: dict[str, 
         ``(warp, cc)``: a 2x3 matrix with ``frame_xy = warp @ [ref_x, ref_y, 1]``
         in normalised coordinates, and the ECC correlation (higher is better).
     """
-    ref_edges = edge_map(reference, params["width"])
+    ref_edges = reference.astype(np.float32) if reference.ndim == 2 else edge_map(reference, params["width"])
     frame_edges = edge_map(frame, params["width"])
     warp = np.eye(2, 3, dtype=np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, params["iterations"], params["eps"])
@@ -92,21 +96,29 @@ def transform_points(warp: np.ndarray, points: np.ndarray) -> np.ndarray:
 
 
 def reference_path(params: dict[str, Any]) -> Path:
-    """Where the reference frame is: ``WIUT_REFERENCE`` if set, else ``registration.reference``."""
+    """Where the template is: ``WIUT_REFERENCE`` if set, else ``registration.reference``."""
     return resolve(os.environ.get(REFERENCE_ENV) or params["reference"])
 
 
+def save_edges(edges: np.ndarray, path: Path) -> None:
+    """Store an edge map in [0, 1] as a 16-bit PNG (no visible loss of precision for ECC)."""
+    cv2.imwrite(str(path), np.round(np.clip(edges, 0, 1) * EDGE_SCALE).astype(np.uint16))
+
+
 @lru_cache(maxsize=None)
-def _load(path: Path) -> np.ndarray | None:
-    image = cv2.imread(str(path))
+def _load(path: Path, width: int) -> np.ndarray | None:
+    image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if image is None:
         log.warning("%s (%s)", MISSING, path)
-    return image
+        return None
+    if image.ndim == 2 and image.dtype == np.uint16:   # a stored edge map
+        return image.astype(np.float32) / EDGE_SCALE
+    return edge_map(image, width)                       # a frame
 
 
 def load_reference(params: dict[str, Any]) -> np.ndarray | None:
-    """The reference frame the scene is drawn on (loaded once), or None if it is missing (logged once)."""
-    return _load(reference_path(params))
+    """The template's edge map (loaded once), or None if the template is missing (logged once)."""
+    return _load(reference_path(params), params["width"])
 
 
 def rejection_reason(warp: np.ndarray, cc: float, params: dict[str, Any]) -> str:

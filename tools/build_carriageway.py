@@ -119,8 +119,9 @@ def main() -> int:
     print(f"pedestrian anchors on the carriageway: old {pedestrian_share(old, a, params, 0.0):.3f}, "
           f"new {pedestrian_share(new, a, params, 0.0):.3f}, new with {inset} inset {pedestrian_share(new, a, params, inset):.3f}")
 
-    reference = load_reference(params["registration"])   # None without the (local-only) reference frame
-    frame = cv2.resize(reference, CANVAS) if reference is not None else np.zeros((CANVAS[1], CANVAS[0], 3), np.uint8)
+    edges = load_reference(params["registration"])   # the reference edge map; None without a template
+    frame = (cv2.cvtColor(cv2.resize(np.round(edges * 255).astype(np.uint8), CANVAS), cv2.COLOR_GRAY2BGR)
+             if edges is not None else np.zeros((CANVAS[1], CANVAS[0], 3), np.uint8))
     img = (frame * 0.6).astype(np.uint8)
     for scene, color in ((old, (0, 0, 255)), (new, (0, 255, 0))):
         cv2.polylines(img, [(np.asarray(scene.carriageway.exterior.coords) * CANVAS).astype(np.int32)], True, color, 2)

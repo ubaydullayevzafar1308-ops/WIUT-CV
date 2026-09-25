@@ -43,14 +43,23 @@ def crossing_edge_strength(edges: np.ndarray, scene: Scene) -> float:
     return float(edges[mask > 0].mean())
 
 
-needs_reference = pytest.mark.skipif(not reference_path(PARAMS).exists(),
-                                     reason="reference frame is sample data, local only (configs/local/)")
+LOCAL_FRAME = ROOT / "configs" / "local" / "reference_frame.jpg"   # sample data: local only, never in git
+needs_reference = pytest.mark.skipif(not reference_path(PARAMS).exists(), reason="no reference edge map")
+needs_local_frame = pytest.mark.skipif(not LOCAL_FRAME.exists(), reason="reference frame is sample data, local only")
 
 
 @needs_reference
-def test_reference_frame_is_small_and_loads():
-    assert reference_path(PARAMS).stat().st_size <= 300 * 1024
-    assert load_reference(PARAMS).shape[:2] == (540, 960)
+def test_reference_edge_map_is_small_and_loads():
+    assert reference_path(PARAMS).stat().st_size <= 2 * 1024 * 1024
+    edges = load_reference(PARAMS)
+    assert edges.shape == (540, 960) and edges.dtype == np.float32 and 0.0 <= edges.min() <= edges.max() <= 1.0
+
+
+@needs_reference
+@needs_local_frame
+def test_edge_map_is_what_ecc_gets_from_the_frame():
+    frame_edges = edge_map(cv2.imread(str(LOCAL_FRAME)), PARAMS["width"])
+    assert np.abs(load_reference(PARAMS) - frame_edges).max() < 1e-4   # 16-bit storage
 
 
 def test_missing_reference_disables_alignment(monkeypatch, caplog):
@@ -84,8 +93,9 @@ def test_sample_videos_register(video):
 
 
 @needs_reference
+@needs_local_frame
 def test_reference_registers_to_identity():
-    reg = register_frame(load_reference(PARAMS), PARAMS)
+    reg = register_frame(cv2.imread(str(LOCAL_FRAME)), PARAMS)
     assert reg.ok and reg.cc > 0.99
     assert np.allclose(reg.warp, IDENTITY, atol=1e-3)
 
