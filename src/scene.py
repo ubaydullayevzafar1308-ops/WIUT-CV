@@ -12,7 +12,7 @@ from shapely import affinity
 from shapely.geometry import LineString, Polygon
 
 from src.config import ROOT, load_params
-from src.registration import register_video, transform_points
+from src.registration import Registration, register_video, transform_points
 
 log = logging.getLogger(__name__)
 
@@ -155,15 +155,20 @@ def load_scene(path: Path = SCENE_PATH) -> Scene:
     )
 
 
-def scene_for_video(video_path: str, params: dict | None = None) -> Scene:
-    """The scene aligned to this video; unshifted zones (with a warning) if the alignment is rejected."""
+def align_scene(video_path: str, params: dict | None = None) -> tuple[Scene, Registration]:
+    """The scene aligned to this video and the alignment itself; unshifted zones (with a warning) if it is rejected."""
     params = params or load_params()
     scene = load_scene()
     reg = register_video(video_path, params["registration"])
     name = Path(video_path).name
     if not reg.ok:
         log.warning("%s: scene registration rejected (%s); using zones without shift", name, reg.reason)
-        return scene
+        return scene, reg
     shift = transform_points(reg.warp, np.array([[0.5, 0.5]]))[0] - 0.5
     log.info("%s: scene registered (cc=%.2f, centre shift dx=%+.3f dy=%+.3f)", name, reg.cc, shift[0], shift[1])
-    return scene.warped(reg.warp)
+    return scene.warped(reg.warp), reg
+
+
+def scene_for_video(video_path: str, params: dict | None = None) -> Scene:
+    """The scene aligned to this video; unshifted zones (with a warning) if the alignment is rejected."""
+    return align_scene(video_path, params)[0]

@@ -136,10 +136,13 @@ def compute_features(tracks: Tracks, scene: Scene, params: dict[str, Any]) -> np
     return out
 
 
-def fit_car_width(features: np.ndarray, car_class: int = 2, min_samples: int = 200) -> np.ndarray:
+def fit_car_width(features: np.ndarray, fallback: tuple[float, float], car_class: int = 2,
+                  min_samples: int = 200) -> np.ndarray:
     """Linear fit of car box width (frame widths) against image y: the scene's perspective scale.
 
     Returns ``[slope, intercept]`` for ``np.polyval``; measured ~[0.15, 0.01] on the samples.
+    With too few cars for a fit (under two bands of y with ``min_samples`` each: a
+    short or empty clip) it returns ``fallback``.
     """
     car = (features["cls"] == car_class) & ~features["edge"]
     edges = np.linspace(0.0, 1.0, 21)
@@ -149,4 +152,4 @@ def fit_car_width(features: np.ndarray, car_class: int = 2, min_samples: int = 2
         if m.sum() >= min_samples:
             ys.append((lo + hi) / 2)
             widths.append(float(np.median(features["size"][m])))
-    return np.polyfit(ys, widths, 1)
+    return np.polyfit(ys, widths, 1) if len(ys) >= 2 else np.asarray(fallback, dtype=np.float64)

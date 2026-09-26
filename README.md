@@ -97,6 +97,34 @@ git-ignored). The edge map was added with the organisers' permission (25.09.2026
 be given with `WIUT_REFERENCE` (an edge map or a frame); without one, alignment is disabled and the scene is used as
 drawn.
 
+## Live demo API
+
+`demo/api.py` serves the website's live demo: upload a clip, poll the job, fetch events and the risk curve.
+
+```bash
+pip install -r demo/requirements.txt
+python -m demo.api --host 0.0.0.0 --port 8000
+```
+
+| Endpoint | Response |
+| --- | --- |
+| `POST /api/analyze` (multipart, field `video`) | `{"job_id": "..."}` |
+| `GET /api/jobs/{job_id}` | `{"status": "queued" \| "running" \| "done" \| "error", "progress": 0..1, "error"?: "..."}` |
+| `GET /api/jobs/{job_id}/result` | `{"duration", "fps", "events": [[s, e, label]], "risk": [[t, score]], "scene_matched"}` |
+| `GET /api/health` | `{"ok": true}` |
+
+- One video is analysed at a time; later uploads wait in a queue (at most `demo.max_queued`, then 503).
+  `progress` counts decoded frames. Refused requests get `{"error": "..."}`: not `.mp4` (415), over 200 MB
+  (413, checked from `Content-Length` before the upload is received), longer than 120 s or unreadable (400).
+  Uploads are deleted as soon as their analysis ends.
+- Light mode for a CPU server (4 vCPU, no GPU), `demo` in `configs/params.yaml` (`src/demo.py`): yolo11n at
+  640 px, 5 detector frames per second for Part A and 5 risk updates per second, both fed from one decoding
+  pass; a time fuse raises Part A's stride if the analysis is projected over 1.6× the duration + 20 s.
+- `risk` is the `RiskEstimator` curve thinned to 10 Hz: the largest score in every 0.1 s window.
+- `scene_matched`: the video was aligned to the reference edge map **and** at least 80 % of moving vehicles
+  follow the lane directions of `configs/scene.json`. If not, only events not tied to this intersection are
+  returned (`accident`, `near_miss`), plus the risk curve.
+
 ## System requirements
 
 - Python 3.11, `pip install -r requirements.txt` (nothing else; OpenCV is headless, no `libGL`).

@@ -13,7 +13,7 @@ from src.features import compute_features, fit_car_width
 from src.postprocess import merge_segments
 from src.rules import VideoContext, apply_rules
 from src.scene import Scene, scene_for_video
-from src.tracking import track_video
+from src.tracking import Tracks, track_video
 from src.video import probe
 
 log = logging.getLogger(__name__)
@@ -39,11 +39,15 @@ def scene_matched(features: np.ndarray, scene: Scene, params: dict) -> tuple[boo
     return share >= p["min_share"], share
 
 
-def video_context(video_path: str, params: dict, plan: Plan | None = None) -> VideoContext:
-    """Align the scene, track (one decoding pass, within ``plan``) and build the rules' view of the video."""
-    info = probe(video_path)
-    scene = scene_for_video(video_path, params)
-    tracks = track_video(video_path, params, scene=scene, plan=plan)
+def default_car_width(params: dict) -> tuple[float, float]:
+    """Car box width against y (``[slope, intercept]``) of the camera model in ``risk.ground``."""
+    g = params["risk"]["ground"]
+    return g["width_slope"], -g["width_slope"] * g["horizon_y"]
+
+
+def context_from_tracks(video_path: str, scene: Scene, tracks: Tracks, params: dict) -> VideoContext:
+    """The rules' view of a tracked video: features, signal timeline and timing (logs whether the scene matches)."""
+    info = tracks.info
     features = compute_features(tracks, scene, params)
     matched, share = scene_matched(features, scene, params)
     log.log(logging.INFO if matched else logging.WARNING, "%s: scene %s the camera (%.1f%% of moving vehicles follow their "
@@ -56,9 +60,16 @@ def video_context(video_path: str, params: dict, plan: Plan | None = None) -> Vi
         duration=info.duration,
         aspect=info.height / info.width,
         params=params,
-        car_width_fit=fit_car_width(features),
+        car_width_fit=fit_car_width(features, default_car_width(params)),
         final_stride=int(tracks.timing.get("final_stride", sampling_stride(info, params))),
     )
+
+
+def video_context(video_path: str, params: dict, plan: Plan | None = None) -> VideoContext:
+    """Align the scene, track (one decoding pass, within ``plan``) and build the rules' view of the video."""
+    scene = scene_for_video(video_path, params)
+    tracks = track_video(video_path, params, scene=scene, plan=plan)
+    return context_from_tracks(video_path, scene, tracks, params)
 
 
 def detect_events(video_path: str) -> list[list]:

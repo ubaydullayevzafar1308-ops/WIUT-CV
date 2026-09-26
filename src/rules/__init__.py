@@ -16,5 +16,7 @@ RULES: list[Rule] = [StoppedVehicle(), Congestion(), WrongWay(), Jaywalking(), R
 
 
 def apply_rules(ctx: VideoContext) -> list[Segment]:
-    """Raw segments of every rule, before post-processing."""
+    """Raw segments of every rule, before post-processing (none without a single tracked object)."""
+    if not len(ctx.features):
+        return []
     return [segment for rule in RULES for segment in rule.apply(ctx)]
