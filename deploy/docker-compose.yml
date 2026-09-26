@@ -1,0 +1,44 @@
+# Website + demo API behind Caddy (HTTPS) on one domain. See deploy/README.md.
+name: asila
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    image: asila-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  site:
+    build:
+      context: ${SITE_DIR:-/opt/asila/site}
+      args:
+        VITE_USE_MOCK: "false"
+        VITE_API_BASE: ""
+    image: asila-site
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+      - site
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-81-26-183-186.sslip.io}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
