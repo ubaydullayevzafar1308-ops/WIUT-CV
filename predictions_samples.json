@@ -1,17 +1,32 @@
 {
- "team": "wiut",
+ "team": "ASILA",
  "videos": {
   "C3896.MP4": {
    "events": [
+    [
+     49.316,
+     54.821,
+     "illegal_turn"
+    ],
     [
      66.133,
      102.169,
      "stop_line"
     ],
     [
+     70.437,
+     72.039,
+     "solid_line_crossing"
+    ],
+    [
      78.946,
      82.249,
      "red_light"
+    ],
+    [
+     107.674,
+     111.979,
+     "illegal_turn"
     ],
     [
      112.479,
@@ -24,14 +39,29 @@
      "jaywalking"
     ],
     [
+     164.431,
+     169.636,
+     "jaywalking"
+    ],
+    [
+     180.447,
+     182.949,
+     "jaywalking"
+    ],
+    [
      223.19,
      223.99,
      "failure_to_yield"
     ],
     [
-     298.165,
-     327.394,
-     "stop_line"
+     238.905,
+     252.018,
+     "jaywalking"
+    ],
+    [
+     283.75,
+     287.754,
+     "illegal_turn"
     ]
    ],
    "risk": [
@@ -40840,14 +40870,29 @@
   "C3897.MP4": {
    "events": [
     [
-     130.897,
-     135.302,
-     "red_light"
+     2.169,
+     22.89,
+     "jaywalking"
     ],
     [
-     131.098,
+     42.109,
+     52.319,
+     "jaywalking"
+    ],
+    [
+     77.945,
+     90.257,
+     "jaywalking"
+    ],
+    [
+     133.7,
      169.736,
      "stop_line"
+    ],
+    [
+     143.71,
+     158.625,
+     "jaywalking"
     ],
     [
      145.012,
@@ -40860,6 +40905,11 @@
      "failure_to_yield"
     ],
     [
+     175.842,
+     183.35,
+     "illegal_turn"
+    ],
+    [
      177.444,
      179.446,
      "failure_to_yield"
@@ -40868,6 +40918,26 @@
      213.78,
      215.682,
      "failure_to_yield"
+    ],
+    [
+     218.585,
+     224.791,
+     "jaywalking"
+    ],
+    [
+     231.498,
+     244.211,
+     "jaywalking"
+    ],
+    [
+     292.359,
+     303.57,
+     "jaywalking"
+    ],
+    [
+     306.072,
+     317.817,
+     "jaywalking"
     ]
    ],
    "risk": [
@@ -78976,6 +79046,11 @@
   "C3902.MP4": {
    "events": [
     [
+     22.289,
+     33.4,
+     "jaywalking"
+    ],
+    [
      39.106,
      41.108,
      "wrong_way"
@@ -78986,14 +79061,64 @@
      "failure_to_yield"
     ],
     [
-     84.151,
-     94.461,
+     78.845,
+     104.471,
      "jaywalking"
     ],
     [
      99.466,
      117.184,
      "stop_line"
+    ],
+    [
+     106.573,
+     109.776,
+     "jaywalking"
+    ],
+    [
+     128.095,
+     132.799,
+     "jaywalking"
+    ],
+    [
+     166.033,
+     193.16,
+     "jaywalking"
+    ],
+    [
+     219.386,
+     225.192,
+     "jaywalking"
+    ],
+    [
+     226.793,
+     229.696,
+     "jaywalking"
+    ],
+    [
+     232.999,
+     240.607,
+     "jaywalking"
+    ],
+    [
+     252.018,
+     270.637,
+     "jaywalking"
+    ],
+    [
+     272.439,
+     275.542,
+     "jaywalking"
+    ],
+    [
+     277.244,
+     286.052,
+     "jaywalking"
+    ],
+    [
+     282.249,
+     289.356,
+     "illegal_turn"
     ],
     [
      285.352,
@@ -117107,6 +117232,11 @@
   "C3905.MP4": {
    "events": [
     [
+     12.379,
+     20.687,
+     "jaywalking"
+    ],
+    [
      18.285,
      19.086,
      "failure_to_yield"
@@ -117120,6 +117250,21 @@
      76.343,
      114.681,
      "stop_line"
+    ],
+    [
+     76.944,
+     79.346,
+     "jaywalking"
+    ],
+    [
+     87.454,
+     90.857,
+     "jaywalking"
+    ],
+    [
+     104.471,
+     113.981,
+     "jaywalking"
     ],
     [
      107.674,
@@ -132441,33 +132586,33 @@
    "duration": 340.34,
    "budget_sec": 1021.0,
    "errors": [],
-   "part_a_sec": 233.1,
-   "part_b_sec": 360.0,
-   "total_sec": 593.1
+   "part_a_sec": 173.6,
+   "part_b_sec": 301.1,
+   "total_sec": 474.7
   },
   "C3897.MP4": {
    "duration": 317.82,
    "budget_sec": 953.5,
    "errors": [],
-   "part_a_sec": 220.2,
-   "part_b_sec": 333.0,
-   "total_sec": 553.3
+   "part_a_sec": 213.0,
+   "part_b_sec": 357.8,
+   "total_sec": 570.8
   },
   "C3902.MP4": {
    "duration": 317.82,
    "budget_sec": 953.5,
    "errors": [],
-   "part_a_sec": 225.0,
-   "part_b_sec": 345.6,
-   "total_sec": 570.7
+   "part_a_sec": 220.9,
+   "part_b_sec": 385.2,
+   "total_sec": 606.1
   },
   "C3905.MP4": {
    "duration": 127.63,
    "budget_sec": 382.9,
    "errors": [],
-   "part_a_sec": 93.4,
-   "part_b_sec": 132.1,
-   "total_sec": 225.6
+   "part_a_sec": 97.8,
+   "part_b_sec": 133.2,
+   "total_sec": 231.0
   }
  }
 }
