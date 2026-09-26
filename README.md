@@ -93,7 +93,7 @@ save_edges(edge_map(cv2.imread("configs/local/reference_frame.jpg"), 960), Path(
 ```
 
 The frame itself is sample data and is not stored in the repository, nor in its history (`configs/local/` is
-git-ignored). The edge map was added with the organisers' permission (26.09.2026). Another template can
+git-ignored). The edge map was added with the organisers' permission (25.09.2026). Another template can
 be given with `WIUT_REFERENCE` (an edge map or a frame); without one, alignment is disabled and the scene is used as
 drawn.
 
