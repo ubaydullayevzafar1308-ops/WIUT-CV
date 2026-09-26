@@ -200,13 +200,11 @@ Because the package uses AGPL-3.0 code, this repository is released under the **
 
 ## Team
 
-<!-- TODO: roles taken from TEAM in src/config.ts of github.com/86Hoji/Asila_front_elim_task — to be checked -->
-
-| Member | Role |
-| --- | --- |
-| Khojiakbar Khakimov | Team captain · Frontend, product & analytics |
-| Zafar Ubaydullaev | Backend & infrastructure |
-| Khamid Bustanov | AI engineer · Models & testing |
+| Member | Role | Who did what |
+| --- | --- | --- |
+| Khojiakbar Khakimov | Team captain · Frontend, product & analytics | Analysed the task and the judging criteria and set the product direction; designed and built the website, the dashboard and the demo UI; coordinated the team and the submission |
+| Zafar Ubaydullaev | Backend & infrastructure | The offline inference package and repository; video decoding and the runtime budget; deterministic runs; the demo API and deployment |
+| Khamid Bustanov | AI engineer · Models & testing | Model experiments; testing and evaluation of the pipeline on our labelled sample videos |
 
 ## Repository layout
 
