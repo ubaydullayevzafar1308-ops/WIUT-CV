@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,6 +42,9 @@ TRACK_DTYPE = np.dtype([
 SIGNAL_DTYPE = np.dtype([("t", np.float64), ("ped", np.int8), ("veh", np.int8)])
 
 _MODELS: dict[str, Any] = {}
+
+# Called with (frame_index, t_sec, bgr) for every frame Part A decodes.
+FrameHook = Callable[[int, float, np.ndarray], None]
 
 
 @dataclass
@@ -184,6 +188,7 @@ def track_video(
     use_cache: bool | None = None,
     scene: Scene | None = None,
     plan: Plan | None = None,
+    on_frame: FrameHook | None = None,
 ) -> Tracks:
     """Detect and track road users and read the traffic light, using the cache when possible.
 
@@ -194,6 +199,8 @@ def track_video(
         scene: scene aligned to this video; computed if not given.
         plan: the time fuse; without it the sampling stride never changes. Results
             of a run whose stride was raised are not cached.
+        on_frame: called for every decoded frame, in order (progress, the demo's risk
+            estimator); not called on a cache hit.
     """
     params = params or runtime_params()
     scene = scene or scene_for_video(video_path, params)
@@ -209,7 +216,7 @@ def track_video(
             np.savez_compressed(signal_path, signal=signal)
         return Tracks.load(path, signal)
 
-    tracks, adapted = _run_tracking(video_path, params, scene, plan)
+    tracks, adapted = _run_tracking(video_path, params, scene, plan, on_frame)
     if use_cache and not adapted:
         try:
             tracks.save(path, signal_path)
@@ -218,7 +225,8 @@ def track_video(
     return tracks
 
 
-def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: Plan | None) -> tuple[Tracks, bool]:
+def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: Plan | None,
+                  on_frame: FrameHook | None) -> tuple[Tracks, bool]:
     set_seeds(params["seed"])
     vp, dp, sp = params["video"], params["detector"], params["signal"]
     info = probe(video_path)
@@ -242,7 +250,7 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
 
     sampled: list[int] = []
     chunks: list[np.ndarray] = []
-    timing = {"decode_wait": 0.0, "detect": 0.0, "track": 0.0}
+    timing = {"decode_wait": 0.0, "detect": 0.0, "track": 0.0, "on_frame": 0.0}
     t_start = time.perf_counter()
     batch_idx: list[int] = []
     batch_img: list[np.ndarray] = []
@@ -250,6 +258,12 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
     t0 = time.perf_counter()
     for index, t_sec, bgr in frames:
         signal.feed(t_sec, bgr)
+        if on_frame is not None:
+            t_hook = time.perf_counter()
+            on_frame(index, t_sec, bgr)
+            spent = time.perf_counter() - t_hook
+            timing["on_frame"] += spent
+            t0 += spent   # not time spent waiting for the decoder
         if index < next_sample:
             continue
         next_sample = index + controller.stride
@@ -273,11 +287,11 @@ def _run_tracking(video_path: str, params: dict[str, Any], scene: Scene, plan: P
     rows = np.concatenate(chunks) if chunks else np.empty(0, dtype=TRACK_DTYPE)
     log.info(
         "%s: %d sampled frames (stride %d%s), %d boxes, %d tracks, %d signal samples on %s in %.1fs "
-        "(waiting for decoder %.1fs, detect %.1fs, track %.1fs)",
+        "(waiting for decoder %.1fs, detect %.1fs, track %.1fs, per-frame hook %.1fs)",
         Path(video_path).name, len(sampled), controller.stride,
         f", raised from {controller.initial_stride}" if controller.adapted else "",
         len(rows), len(np.unique(rows["track_id"])), len(signal.samples), device,
-        timing["total"], timing["decode_wait"], timing["detect"], timing["track"],
+        timing["total"], timing["decode_wait"], timing["detect"], timing["track"], timing["on_frame"],
     )
     tracks = Tracks(info=info, frames=np.asarray(sampled, dtype=np.int32), rows=rows,
                     signal=signal.array(), timing=timing)

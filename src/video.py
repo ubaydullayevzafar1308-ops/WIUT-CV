@@ -31,12 +31,24 @@ class VideoInfo:
 
 
 def probe(path: str) -> VideoInfo:
-    """Read stream properties without decoding."""
+    """Read stream properties without decoding.
+
+    The frame count comes from the container header; files that do not store it
+    (some phone recordings) get it from the stream or container duration.
+    """
     with av.open(path) as container:
         stream = container.streams.video[0]
+        fps = float(stream.average_rate)
+        n_frames = stream.frames
+        if not n_frames:
+            if stream.duration is not None:
+                seconds = float(stream.duration * stream.time_base)
+            else:
+                seconds = (container.duration or 0) / av.time_base
+            n_frames = round(seconds * fps)
         return VideoInfo(
-            fps=float(stream.average_rate),
-            n_frames=stream.frames,
+            fps=fps,
+            n_frames=n_frames,
             width=stream.codec_context.width,
             height=stream.codec_context.height,
         )

@@ -129,13 +129,15 @@ def velocity(t: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
 class RiskEstimator:
     """Per-frame P(an accident starts within the next 5 s), using only frames seen so far."""
 
-    def __init__(self, record: bool = False) -> None:
-        """``record`` keeps every processed frame's ``Components`` in ``self.log`` (calibration)."""
+    def __init__(self, record: bool = False, params: dict[str, Any] | None = None) -> None:
+        """``record`` keeps every processed frame's ``Components`` in ``self.log`` (calibration);
+        ``params`` replaces ``runtime_params()`` (the demo's light mode)."""
         self.record = record
+        self.fixed_params = params
 
     def reset(self, meta: dict) -> None:
         """Start a new video. ``meta`` has video_id, fps, width, height, n_frames."""
-        self.params = runtime_params()
+        self.params = self.fixed_params or runtime_params()
         self.p = self.params["risk"]
         set_seeds(self.params["seed"])
         self.meta = meta
