@@ -1,0 +1,15 @@
+# One domain with automatic HTTPS: the demo API under /api, the website for everything else.
+{$SITE_DOMAIN} {
+	request_body {
+		max_size 210MB
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy site:3000
+	}
+}

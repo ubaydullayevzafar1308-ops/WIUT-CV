@@ -1,0 +1,17 @@
+# Sample data never goes into an image (NDA), nor local-only or generated files.
+.git
+samples/
+cache/
+outputs/
+configs/local/
+docs/
+**/*.mp4
+**/*.MP4
+**/*.mov
+**/*.jpg
+**/*.jpeg
+**/__pycache__
+.pytest_cache/
+tests/
+tools/
+data/
