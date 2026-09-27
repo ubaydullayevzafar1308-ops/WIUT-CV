@@ -24,6 +24,6 @@ curl -fsS https://81-26-183-186.sslip.io/api/health
 | --- | --- | --- | --- |
 | api | `deploy/api.Dockerfile` | 8000 (internal) | CPU torch; healthcheck on `/api/health` |
 | site | the site's Dockerfile, built with `VITE_USE_MOCK=false`, `VITE_API_BASE=` | 3000 (internal) | the demo API on the same domain |
-| caddy | `caddy:2` | 80, 443 | HTTPS, 310 MB request body limit |
+| caddy | `caddy:2` | 80, 443 | HTTPS, 310 MiB request body limit |
 
 All three services use `restart: unless-stopped`, and Docker starts on boot.

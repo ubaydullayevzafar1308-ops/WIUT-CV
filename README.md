@@ -105,6 +105,19 @@ and 252.1 s), all false alarms.
 | stopped_vehicle | 1.000 | 1.000 | 1.000 | 1 / 0 / 0 |
 | wrong_way | 1.000 | 1.000 | 1.000 | 1 / 0 / 0 |
 
+**Score A progress (dev)**
+
+| Step | Score A | Scored on |
+| --- | --- | --- |
+| Initial rules | 0.444 | C3905 |
+| Pedestrian-signal and queue fixes | 0.556 | C3905 |
+| Stricter jaywalking rule | 0.631 | C3896 + C3905 |
+| Lane rules (illegal turn, solid line) | 0.889 | C3896 + C3905 |
+| Final rules, final labels | 0.881 (held-out 0.901) | C3896 + C3905 |
+
+Labels grew during the work (classes and events added), so early steps are not directly comparable with the final
+score.
+
 Limitations, plainly:
 
 - The labels were built by reviewing the rules' candidates (C3905 was watched in full), so events no rule proposed are
@@ -150,6 +163,9 @@ The frame itself is sample data and is not stored in the repository, nor in its 
 git-ignored). The edge map was added with the organisers' permission (25.09.2026). Another template can
 be given with `WIUT_REFERENCE` (an edge map or a frame); without one, alignment is disabled and the scene is used as
 drawn.
+
+Without scene alignment Score A drops from 0.881 to 0.798 on dev (C3896 + C3905) and from 0.901 to 0.401 on held-out
+(C3897 + C3902). The main loss is C3902, where the camera shifted most: 17 false `wrong_way`.
 
 ## Live demo
 
