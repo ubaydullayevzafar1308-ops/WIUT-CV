@@ -168,8 +168,8 @@ python -m demo.api --host 0.0.0.0 --port 8000
 | `GET /api/health` | `{"ok": true}` |
 
 - One video is analysed at a time; later uploads wait in a queue (at most `demo.max_queued`, then 503).
-  `progress` counts decoded frames. Refused requests get `{"error": "..."}`: not `.mp4` (415), over 200 MB
-  (413, checked from `Content-Length` before the upload is received), longer than 120 s or unreadable (400).
+  `progress` counts decoded frames. Refused requests get `{"error": "..."}`: not `.mp4` (415), over 300 MB
+  (413, checked from `Content-Length` before the upload is received), longer than 180 s or unreadable (400).
   Uploads are deleted as soon as their analysis ends.
 - Light mode for a CPU server (4 vCPU, no GPU), `demo` in `configs/params.yaml` (`src/demo.py`): yolo11n at
   640 px, 5 detector frames per second for Part A and 5 risk updates per second, both fed from one decoding

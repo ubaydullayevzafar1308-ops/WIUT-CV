@@ -55,8 +55,8 @@ def clip(tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="module")
 def long_clip(tmp_path_factory) -> Path:
-    """121 s at 1 fps, tiny frames: longer than the 120 s limit."""
-    return write_clip(tmp_path_factory.mktemp("clips") / "long.mp4", 121, rate=Fraction(1), size=(64, 48))
+    """181 s at 1 fps, tiny frames: longer than the 180 s limit."""
+    return write_clip(tmp_path_factory.mktemp("clips") / "long.mp4", 181, rate=Fraction(1), size=(64, 48))
 
 
 def demo_params(upload_dir: Path, **changes) -> dict:
@@ -205,7 +205,7 @@ def test_too_long_video(long_clip, tmp_path):
     with TestClient(create_app(FakeAnalyzer(), demo_params(tmp_path))) as client:
         response = upload(client, long_clip)
     assert response.status_code == 400
-    assert response.json() == {"error": "video is 121 s long; at most 120 s are allowed"}
+    assert response.json() == {"error": "video is 181 s long; at most 180 s are allowed"}
     assert not list(tmp_path.iterdir())
 
 
