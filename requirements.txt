@@ -4,11 +4,13 @@
 --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Harness (run_submission.py, evaluate.py)
-numpy==2.4.6
+numpy==2.4.6; python_version >= "3.11"
+numpy==2.2.6; python_version < "3.11"
 opencv-python-headless==5.0.0.93
 
 # Decoding
-av==18.1.0
+av==18.1.0; python_version >= "3.11"
+av==17.1.0; python_version < "3.11"
 
 # Detection and tracking
 torch==2.14.0+cu126; sys_platform == "linux"

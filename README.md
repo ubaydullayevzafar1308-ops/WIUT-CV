@@ -12,7 +12,9 @@ python run_submission.py --videos /data/test --out predictions.json
 
 - **Weights** are in the repository (`weights/yolo11s.pt`, `weights/yolo11n.pt` for CPU) and loaded by path; nothing is
   downloaded at run time, no internet needed.
-- **GPU**: Linux + NVIDIA (T4-class), Python 3.11. `requirements.txt` installs the CUDA 12.6 build of torch 2.14.0 /
+- **Python 3.10 or newer** (on 3.10 `requirements.txt` picks numpy 2.2.6 and av 17.1.0; on 3.11+ numpy 2.4.6 and
+  av 18.1.0). On macOS use Python 3.11+ (some wheels are missing for 3.10 on macOS); Linux 3.10+ is tested.
+- **GPU**: Linux + NVIDIA (T4-class). `requirements.txt` installs the CUDA 12.6 build of torch 2.14.0 /
   torchvision 0.29.0, which needs **driver ≥ 525.60.13** (check with `nvidia-smi`). macOS installs the regular build
   (MPS on Apple Silicon).
 - **CPU mode** (no GPU, or `WIUT_DEVICE=cpu`): the `cpu` device profile in `configs/params.yaml` uses yolo11n at
