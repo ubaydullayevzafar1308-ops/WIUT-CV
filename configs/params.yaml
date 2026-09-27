@@ -279,9 +279,9 @@ risk:                       # Part B, src/risk.py; distances and speeds on the g
                             # calibrated with tools/risk_report.py --replay: 1 alarm on the 18 min of samples
 
 demo:                       # live demo API for the website (demo/api.py, src/demo.py); target: a CPU server with
-                            # 4 vCPU and no GPU analyses a 2-minute 4K clip in 3-4 minutes
-  max_upload_mb: 200        # larger uploads are refused
-  max_duration_sec: 120     # longer videos are refused
+                            # 4 vCPU and no GPU analyses a 3-minute 4K clip in 3-5 minutes
+  max_upload_mb: 300        # larger uploads are refused
+  max_duration_sec: 180     # longer videos are refused
   extensions: [.mp4]        # accepted file name extensions (case-insensitive)
   max_queued: 5             # jobs waiting at most; further uploads are refused until the queue drains
   keep_jobs: 50             # finished jobs whose results stay available (the oldest are dropped first)
@@ -290,7 +290,7 @@ demo:                       # live demo API for the website (demo/api.py, src/de
   cors_origins: ["*"]       # origins allowed to call the API from a browser
   time_factor: 1.6          # time fuse: Part A raises its stride when the whole analysis (risk included, it runs
   time_extra_sec: 20.0      # in the same decoding pass) is projected over this x the video duration plus this
-                            # (model loading, scene alignment): 212 s for a 2-minute clip
+                            # (model loading, scene alignment): 308 s for a 3-minute clip
   risk_bin_sec: 0.1         # the risk curve is thinned to 10 Hz: the largest score in every 0.1 s window
   unmatched_classes: [accident, near_miss]   # scene does not match the camera: only events not tied to our
                             # intersection are returned (plus the risk curve)
